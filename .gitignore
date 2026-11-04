@@ -1,0 +1,20 @@
+# Dependencies (rebuilt with npm install)
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Secrets - NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS / editor files
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
