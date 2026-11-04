@@ -1,10 +1,11 @@
 // Component tests: render the real app in a fake browser (jsdom) and use it
 // the way a person would, by clicking and typing.
-import { beforeEach, describe, expect, it } from 'vitest'
+// The backend is replaced by a fake API (src/test/fakeApi.js), so no server is needed.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App.jsx'
-import { resetData } from './services/leadService.js'
+import { installFakeApi } from './test/fakeApi.js'
 
 async function renderApp() {
   const user = userEvent.setup()
@@ -19,7 +20,11 @@ async function goTo(user, label) {
 }
 
 describe('App', () => {
-  beforeEach(() => resetData())
+  let api
+  beforeEach(() => {
+    api = installFakeApi() // fresh sample data for every test
+  })
+  afterEach(() => vi.unstubAllGlobals())
 
   it('always shows the simulated data banner', async () => {
     await renderApp()
@@ -57,10 +62,41 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Save lead' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent(/Lead LD-\d+ saved for Tom Rivera/)
+    // The lead really went to the API with a POST
+    expect(api.fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({ method: 'POST' }))
 
     await goTo(user, 'Leads')
     const row = screen.getByRole('button', { name: 'Tom Rivera' }).closest('tr')
     expect(within(row).getByText('Pending')).toBeInTheDocument()
+  })
+
+  it('shows the duplicate error from the server under the form', async () => {
+    const user = await renderApp()
+    await goTo(user, 'New Lead')
+
+    await user.type(screen.getByLabelText('Full name'), 'Maria G')
+    await user.type(screen.getByLabelText('Phone'), '512-555-0100')
+    await user.type(screen.getByLabelText('Email'), 'maria.gonzalez@example.com') // already exists
+    await user.type(screen.getByLabelText('ZIP code'), '78701')
+    await user.selectOptions(screen.getByLabelText('Service needed'), 'Roofing')
+    await user.selectOptions(screen.getByLabelText('Timeline'), 'ASAP')
+    await user.type(screen.getByLabelText('Project details'), 'Second request about the roof.')
+    await user.click(screen.getByRole('button', { name: 'Save lead' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/)
+    expect(screen.queryByText(/saved for/)).not.toBeInTheDocument()
+  })
+
+  it('shows an honest error with a retry button when the server is down', async () => {
+    vi.unstubAllGlobals()
+    installFakeApi({ failWith: 'network' })
+    render(<App />)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/Could not reach the server/)
+    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    // It must NOT look like an empty dashboard
+    expect(screen.queryByRole('region', { name: 'Key metrics' })).not.toBeInTheDocument()
   })
 
   it('filters the leads table to Hot leads only', async () => {

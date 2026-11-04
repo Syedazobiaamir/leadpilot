@@ -2,8 +2,9 @@
 export default function SimulatedBanner() {
   return (
     <div className="simulated-banner" role="note">
-      <strong>Demo mode:</strong> all leads, AI classifications and automation runs are
-      simulated sample data. No AI, database or automation service is connected yet.
+      <strong>Demo mode:</strong> data comes from the local API server, but it is simulated sample data
+      held in memory (it resets when the server restarts). AI classifications and automation runs are
+      simulated. No AI, database or automation service is connected yet.
     </div>
   )
 }

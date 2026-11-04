@@ -293,12 +293,14 @@ Use realistic sample data and clearly identify simulated features.
 
 ## 14. Current Development Status
 
-We are starting Stage 1.
+- **Stage 1 (React frontend): complete.** Dashboard, lead form, lead table, monitoring and activity log, all verified.
+- **Stage 2 (Node.js + Express backend): complete.** REST API with validation, duplicate protection, structured logging and a consistent error format. The frontend calls the API through the Vite proxy. Verified by backend tests, frontend tests, `npm run smoke`, and a manual check by the developer.
+- **Next: Stage 3 (Google Sheets database integration).** Not started. Propose a plan first.
 
-Only implement the React frontend at this stage.
-
-Do not connect Gemini, Google Sheets, n8n or external APIs yet.
-
-First inspect the existing project files, then propose a Stage 1 implementation plan.
+Still true at this point:
+- Data is simulated sample data held in memory (`backend/services/leadStore.js`). Stage 3 replaces only that file's internals.
+- Gemini, Google Sheets, n8n and Slack are NOT connected. Don't connect any integration without checking credentials and getting approval.
+- The lead schema exists in two identical copies (frontend + backend). Edit both. A test enforces this.
+- Docs: `docs/api-documentation.md`, `backend/README.md`, `frontend/README.md`. Skills: `frontend-design`, `api-development`, `testing-qa`.
 
 Wait for my approval before making major architectural changes.

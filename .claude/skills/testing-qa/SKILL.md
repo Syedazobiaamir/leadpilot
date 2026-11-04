@@ -1,31 +1,40 @@
 ---
 name: testing-qa
-description: How to write, run and honestly report tests for this project (Vitest, React Testing Library; Supertest from Stage 2). Use when adding features, fixing bugs, or before declaring any feature complete.
+description: How to write, run and honestly report tests for this project (Vitest, React Testing Library, Supertest, smoke test). Use when adding features, fixing bugs, or before declaring any feature complete.
 ---
 
 # Testing & QA
 
 ## Tools
-- **Vitest** is the test runner. Config is in `frontend/vite.config.js` (`test` section, jsdom environment).
+- **Vitest** is the test runner in both projects. Frontend config: `frontend/vite.config.js` (`test` section, jsdom). Backend: defaults (Node environment).
 - **React Testing Library** with `@testing-library/user-event` tests components the way a user uses them.
-- **Supertest** (from Stage 2) tests Express API endpoints.
+- **Supertest** sends HTTP requests to the Express app (`createApp()` from `backend/app.js`) without opening a port.
+- **Smoke test** (`backend/scripts/smoke.js`) sends real requests to the running app.
 
-## Commands (run inside `frontend/`)
-- `npm test` runs all tests once.
-- `npm run test:watch` re-runs tests when files change.
-- `npm run lint` and `npm run build` must also pass.
+## Commands
+| Where | Command | Purpose |
+|---|---|---|
+| `backend/` | `npm test` | Unit + API tests |
+| `frontend/` | `npm test` | Unit + component tests (fake API, no server needed) |
+| `frontend/` | `npm run lint` and `npm run build` | Must pass |
+| `backend/` | `npm run smoke` | End-to-end through the Vite proxy (both servers running). Creates one lead per run |
+
+Run the tests with a time limit (e.g. `timeout 120 npx vitest run`) so a hung run is noticed instead of blocking.
 
 ## What to test
 - **Pure logic** (`validation/`, `utils/`): valid and invalid inputs, edge cases (empty list, divide by zero, bad dates).
-- **Services**: validation is re-checked even if the UI is bypassed, plus duplicate protection and the created record's shape.
-- **Components**: query by role or label (`getByRole`, `getByLabelText`), not CSS classes. Test error messages, success messages, and that filtering changes what's visible.
-- Call `resetData()` in `beforeEach`, because the in-memory store is shared between tests.
+- **Backend endpoints**: the success case plus **every** error code the endpoint can return, and that rejected requests don't change any data. Call `resetStore()` in `beforeEach`.
+- **Backend safety**: unknown fields are ignored, no personal data in audit events or logs, no internal details in `500` responses.
+- **Frontend service** (`leadService.js`): mock `fetch` for success, `400`, `409`, `500`, network failure, timeout, and non-JSON responses.
+- **Components**: use `installFakeApi()` from `src/test/fakeApi.js` (and `{ failWith: 'network' }` for server-down). Query by role or label (`getByRole`, `getByLabelText`), not CSS classes. Check that failures are never shown as success or as empty data.
+- **Shared schema**: `backend/tests/schemaSync.test.js` must stay green. Edit both copies of `leadSchema.js`.
 
 ## Honesty rules
 - Paste the **real** test output. Never summarize results that weren't actually run.
-- When a new test passes on the first run, break the code on purpose once to confirm the test can fail, then restore the code.
+- When a new test passes on the first run, break the code on purpose once to confirm the test can fail, then restore the code. Always back the file up first and check it was restored.
+- If a run hangs or gives odd numbers, don't count it as evidence. Re-run it with a time limit and report what happened.
 - Never weaken or delete a test just to make it pass. Fix the code, or explain why the test was wrong.
-- Write down what is **not** tested (for example, visual layout, or real network failures before Stage 2).
+- Write down what is **not** tested (e.g. visual layout, load and performance).
 
 ## Manual end-to-end check
-Automated tests don't replace actually using the app. Run `npm run dev`, go through the feature's checklist (see `frontend/README.md`), and ask the developer to confirm.
+Automated tests don't replace actually using the app. Start both servers, go through the checklist in `frontend/README.md`, run `npm run smoke`, and ask the developer to confirm.
