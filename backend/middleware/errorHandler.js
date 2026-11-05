@@ -32,8 +32,10 @@ export function errorHandler(log = defaultLogger) {
 
     const { statusCode, code, message, details } = toErrorResponse(err)
 
-    // Unexpected errors get the full stack trace, but only in OUR logs.
-    if (statusCode >= 500) {
+    // Unexpected errors (bugs) get the full stack trace, but only in OUR logs.
+    // An AppError with status 5xx (e.g. 503 STORAGE_UNAVAILABLE) is an EXPECTED failure:
+    // the code that threw it has already logged the reason, so don't report it as a bug.
+    if (statusCode >= 500 && !(err instanceof AppError)) {
       log.error('unhandled error', { requestId: req.id, code, error: err.message, stack: err.stack })
     }
 

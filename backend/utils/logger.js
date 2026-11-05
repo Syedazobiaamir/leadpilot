@@ -7,7 +7,7 @@ import { config } from '../config.js'
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 }
 
 // Field names that must never appear in logs with their real values.
-const SENSITIVE_KEY = /pass(word)?|secret|token|api[-_]?key|authorization|cookie/i
+const SENSITIVE_KEY = /pass(word)?|secret|token|api[-_]?key|private[-_]?key|credential|authorization|cookie/i
 
 /** Replaces the values of sensitive fields (at any depth) with "[REDACTED]". */
 export function redact(value, depth = 0) {

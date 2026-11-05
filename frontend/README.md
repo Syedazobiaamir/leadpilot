@@ -2,8 +2,9 @@
 
 The React dashboard for the AI Lead Management & Self-Healing Automation Platform.
 
-> **Stage 2 status:** the UI loads and saves data through the Express API (`backend/`).
-> The data is still **simulated sample data held in the server's memory**.
+> **Stage 3 status:** the UI loads and saves data through the Express API (`backend/`).
+> The backend stores it in **Google Sheets** (persistent) or **in memory** (resets on restart), depending on
+> `DATA_STORE` in `backend/.env`. The data starts as **simulated sample data**.
 > No AI (Gemini), database (Google Sheets) or automation (n8n) is connected yet.
 
 ## Run it
@@ -74,7 +75,8 @@ src/
 A failure is never shown as success, and a failed load never shows as an empty dashboard.
 
 ## Known limitations
-- **No persistence:** data lives in the server's memory and resets when the backend restarts (Stage 3).
+- **Persistence depends on the backend:** with `DATA_STORE=sheets` data is kept in Google Sheets; with `memory` it resets when the backend restarts.
+- **Storage problems** (Google Sheets down, slow or misconfigured) show as "Lead storage is temporarily unavailable…" with *Try again*. A failed save is never shown as saved.
 - **AI classification is not real:** new leads stay "Pending" until Stage 4.
 - **Monitoring data is static samples.** Nothing is actually being retried.
 - **No authentication** yet.
@@ -94,4 +96,4 @@ Start both servers first.
 9. Click a customer name → the detail panel opens. *Close* hides it.
 10. **Automation** → failed or escalated runs show their last error. The activity log includes your new lead.
 11. Narrow the browser window (or use phone view in DevTools) → the layout stacks and nothing overflows.
-12. Stop the backend and refresh → "Could not reach the server" with *Try again*. Start it again and click *Try again* → the data is back (your new lead is gone: it was in memory).
+12. Stop the backend and refresh → "Could not reach the server" with *Try again*. Start it again and click *Try again* → the data is back (with `DATA_STORE=sheets` your new lead is still there; with `memory` it is gone).

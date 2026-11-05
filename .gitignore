@@ -18,3 +18,9 @@ dist-ssr/
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Google service account key files - NEVER commit these
+# (keep the downloaded JSON key OUTSIDE the project folder anyway)
+*service-account*.json
+*credentials*.json
+*-key.json

@@ -10,12 +10,15 @@
     "start": "node --env-file-if-exists=.env server.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "sheets:check": "node --env-file-if-exists=.env scripts/sheets.js check",
+    "sheets:setup": "node --env-file-if-exists=.env scripts/sheets.js setup"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "@googleapis/sheets": "^18.1.2",
     "express": "^5.3.0",
     "zod": "^4.6.7"
   },

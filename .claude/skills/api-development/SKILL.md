@@ -11,7 +11,7 @@ description: Conventions for building and changing the Express REST API in backe
 | Route | `routes/` | Only maps method + URL → controller. Mount new routers in `app.js` **before** `notFound` |
 | Controller | `controllers/` | Read `req`, call ONE service function, send the response. No business rules, no `try/catch` (Express 5 forwards async errors to `errorHandler`) |
 | Service | `services/*Service.js` | Business rules. No `req`/`res`. Throw `AppError` for expected failures. Agents (Stage 5) will call services directly |
-| Store | `services/leadStore.js` | The ONLY file that knows where data lives. Async functions that return **copies**. Google Sheets replaces its internals in Stage 3 |
+| Store | `services/leadStore.js` → `services/stores/*` | `leadStore.js` picks `memoryStore` or `sheetsStore` from `DATA_STORE`. Every store has the same async functions, returns **copies**, and must pass `tests/storeContract.js`. Store failures become `503 STORAGE_UNAVAILABLE`. External-service rules: see the `api-integration` skill |
 
 ## Responses
 - Success: `{ data }`, or `{ data, count }` for lists. Create returns `201` + a `Location` header.
@@ -31,7 +31,7 @@ description: Conventions for building and changing the Express REST API in backe
 - Read environment variables only in `config.js`. Document each new one in `.env.example` and the backend README. Never commit `.env`.
 
 ## Dependencies
-Current: `express`, `zod`; dev: `vitest`, `supertest`. Ask before adding anything, and explain why it's needed.
+Current: `express`, `zod`, `@googleapis/sheets`; dev: `vitest`, `supertest`. Ask before adding anything, and explain why it's needed.
 
 ## Done means
 1. Supertest tests cover success and every error code of the endpoint (see the `testing-qa` skill).

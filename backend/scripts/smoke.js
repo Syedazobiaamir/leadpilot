@@ -99,12 +99,15 @@ async function main() {
   check('Error responses include requestId', typeof invalid.json?.error?.requestId === 'string')
 
   console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
-  process.exit(failures === 0 ? 0 : 1)
+  // Set the exit code instead of calling process.exit(). Node then finishes on its own
+  // once open network connections close. Calling process.exit() while fetch connections
+  // are closing can crash Node on Windows ("Assertion failed ... UV_HANDLE_CLOSING").
+  process.exitCode = failures === 0 ? 0 : 1
 }
 
 main().catch((err) => {
   // Usually means a server isn't running. Say so clearly instead of showing a long stack trace.
   console.error(`\nSMOKE TEST COULD NOT RUN: ${err.cause?.code ?? err.message}`)
   console.error(`Is the app running at ${BASE}? Start the backend (and the frontend for port 5173) first.`)
-  process.exit(1)
+  process.exitCode = 1
 })

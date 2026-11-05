@@ -5,7 +5,10 @@ REST API served by the Express backend (`backend/`).
 - **Base URL (development):** `http://localhost:3001/api`, or `http://localhost:5173/api` through the Vite proxy
 - **Format:** JSON requests and responses (`Content-Type: application/json`)
 - **Authentication:** none yet (planned before deployment)
-- **Data:** Stage 2 uses an **in-memory store seeded with simulated sample data**. It resets on every server restart.
+- **Data:** set by `DATA_STORE` in `backend/.env`:
+  - `memory` (default): in-memory store seeded with **simulated sample data**. It resets on every server restart.
+  - `sheets`: **Google Sheets** (tabs `Leads`, `Activity`, `WorkflowRuns`). Data persists. Setup: [`google-sheets-setup.md`](google-sheets-setup.md).
+- **Any endpoint that touches data** can return `503 STORAGE_UNAVAILABLE` when storage (Google Sheets) is unreachable or misconfigured. See the error reference.
 
 ---
 
@@ -45,10 +48,22 @@ Every response has an `X-Request-Id` header. You can send your own, e.g. an n8n 
 ## Endpoints
 
 ### `GET /api/health`
-Liveness check for monitoring.
+**Liveness:** "the server process is running". Never touches storage, so it stays `200` even when Google Sheets is down.
 ```json
-200 { "status": "ok", "uptimeSeconds": 42, "timestamp": "2026-11-04T08:42:57.171Z" }
+200 { "status": "ok", "store": "sheets", "uptimeSeconds": 42, "timestamp": "2026-11-05T06:39:40.375Z" }
 ```
+
+### `GET /api/health/ready`
+**Readiness:** "the server can do its job right now". Checks that storage is reachable and every tab has the right header row. It reads only the header rows and is never cached.
+```json
+200 { "status": "ready", "store": "sheets", "timestamp": "2026-11-05T06:39:42.330Z" }
+```
+| Status | Code | When |
+|---|---|---|
+| 200 | | Storage OK (always for `memory`) |
+| 503 | `STORAGE_UNAVAILABLE` | Google Sheets unreachable, too slow (8 s), credentials rejected, sheet not shared, tab missing, or header wrong. The exact reason is in the server log (`"msg":"storage error"`, field `kind`) |
+
+Monitoring (n8n, Stage 6) should alert when `/ready` fails, and restart the server only when `/health` fails.
 
 ### `GET /api/leads`
 All leads, newest first.
@@ -117,6 +132,7 @@ A successful create also writes an activity event (lead ID only, no personal dat
 | 409 | `DUPLICATE_LEAD` | Same email (any letter case) or same phone (any format) already exists. The matching lead is deliberately not revealed | No |
 | 413 | `PAYLOAD_TOO_LARGE` | Body over 10 KB | No |
 | 500 | `INTERNAL_ERROR` | Unexpected server error. Details are only in the server log, found by `requestId` | Yes, with backoff (Stage 7) |
+| 503 | `STORAGE_UNAVAILABLE` | Storage could not be read or written. **The lead may or may not have been saved** (see limitations) | Only after checking whether the lead exists (Stage 7) |
 
 ### `GET /api/activity`
 Activity and audit events, newest first. `type` is one of `lead`, `ai`, `automation`, `error`, `recovery` or `escalation`.
@@ -147,10 +163,14 @@ Automation workflow runs, newest first. **Simulated sample data** until n8n is c
 | `DUPLICATE_LEAD` | 409 | Yes | Lead already exists |
 | `PAYLOAD_TOO_LARGE` | 413 | Yes | Body too large |
 | `INTERNAL_ERROR` | 500 | No (may be temporary) | Unexpected server error |
+| `STORAGE_UNAVAILABLE` | 503 | No (often temporary) | Storage (Google Sheets) unreachable, slow or misconfigured. The log `kind` says which: `timeout`, `rate_limited`, `unavailable` (temporary) or `auth`, `api_disabled`, `permission`, `not_found`, `missing_tab`, `bad_format` (need a human) |
 
 "Permanent" means sending the same request again will fail the same way. Only non-permanent errors should ever be retried.
 
-## Known limitations (Stage 2)
-- Data is in memory and resets on restart. Google Sheets arrives in Stage 3.
+## Known limitations (Stage 3)
 - No authentication or rate limiting yet (Stage 8).
-- The duplicate check is safe today (verified: 5 identical concurrent requests produced 1 lead and 4 × `409`), but it is a check-then-insert. Once storage is a network call (Google Sheets), simultaneous identical requests could both pass. Stage 7 adds proper duplicate-request protection.
+- **Partial writes (Google Sheets):** creating a lead writes two rows, the lead and then its activity event. Sheets has no transactions. If the second write fails, the client gets `503`, but the lead **is saved**, so retrying the same request returns `409 DUPLICATE_LEAD`. A write that times out may also have been saved. Stage 7 adds idempotency keys and recovery for this.
+- **Duplicate race:** the duplicate check is check-then-insert. It held in memory (5 identical concurrent requests → 1 lead, 4 × `409`), but with Google Sheets two simultaneous identical requests could both pass. Stage 7 adds proper duplicate-request protection.
+- **Cache:** reads are cached for 10 s, so hand edits in the sheet appear in the API within ~10 s.
+- **Rows broken by hand** (e.g. text in `score`) are skipped and logged as warnings, not returned.
+- **Scale:** every uncached read loads a whole tab. That is fine for hundreds of leads, not for many thousands.

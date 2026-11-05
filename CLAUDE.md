@@ -295,12 +295,19 @@ Use realistic sample data and clearly identify simulated features.
 
 - **Stage 1 (React frontend): complete.** Dashboard, lead form, lead table, monitoring and activity log, all verified.
 - **Stage 2 (Node.js + Express backend): complete.** REST API with validation, duplicate protection, structured logging and a consistent error format. The frontend calls the API through the Vite proxy. Verified by backend tests, frontend tests, `npm run smoke`, and a manual check by the developer.
-- **Next: Stage 3 (Google Sheets database integration).** Not started. Propose a plan first.
+- **Stage 3 (Google Sheets database integration): complete.** A swappable store (`DATA_STORE=memory|sheets`) with a shared contract, a Sheets store (RAW writes, 10 s cache, our own 8 s deadline, every failure → `503 STORAGE_UNAVAILABLE`), `/api/health/ready`, and `sheets:check` / `sheets:setup` scripts. Verified live against the developer's real sheet (smoke 24/24, data survives restart) and by failure drills (which found and fixed a missing-deadline bug).
+- **Next: Stage 4 (Gemini AI lead qualification).** Not started. Propose a plan first.
 
 Still true at this point:
-- Data is simulated sample data held in memory (`backend/services/leadStore.js`). Stage 3 replaces only that file's internals.
-- Gemini, Google Sheets, n8n and Slack are NOT connected. Don't connect any integration without checking credentials and getting approval.
+- The developer's `backend/.env` has `DATA_STORE=sheets` and is connected to their Google Sheet (service account `id-leadpilot-sheets@step-1-done.iam.gserviceaccount.com`). Tests always use memory.
+- Gemini, n8n and Slack are NOT connected. Don't connect any integration without checking credentials and getting approval. Follow the `api-integration` skill.
+- Known Stage 7 items: partial writes (a lead saved but its activity write failed → client sees 503), the duplicate check-then-insert race, no retries yet.
 - The lead schema exists in two identical copies (frontend + backend). Edit both. A test enforces this.
-- Docs: `docs/api-documentation.md`, `backend/README.md`, `frontend/README.md`. Skills: `frontend-design`, `api-development`, `testing-qa`.
+- Docs: `docs/api-documentation.md`, `docs/google-sheets-setup.md`, `backend/README.md`, `frontend/README.md`. Skills: `frontend-design`, `api-development`, `api-integration`, `testing-qa`.
+
+⚠️ **Open security TODO: rotate the Google service account key.** The current key (ID starting `45ee26ba6d64`)
+was pasted into a chat on 2026-11-05. The developer chose to keep it temporarily while the sheet holds only
+SIMULATED sample data. Before any real customer data is stored, and before deployment (Stage 9): delete that key in
+Google Cloud (IAM & Admin → Service Accounts → KEYS), create a new one, update `backend/.env`, and remove this note.
 
 Wait for my approval before making major architectural changes.

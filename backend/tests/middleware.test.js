@@ -23,6 +23,9 @@ function appWithFailingRoutes(log) {
   app.get('/known-error', () => {
     throw new AppError(409, 'DUPLICATE_LEAD', 'Lead already exists', { leadId: 'LD-1001' })
   })
+  app.get('/expected-503', () => {
+    throw new AppError(503, 'STORAGE_UNAVAILABLE', 'Lead storage is temporarily unavailable.')
+  })
   app.get('/bug', async () => {
     // An async route that throws. Express 5 must still catch it.
     await Promise.resolve()
@@ -103,6 +106,19 @@ describe('notFound + errorHandler', () => {
     const errorLine = lines.find((l) => l.msg === 'unhandled error')
     expect(errorLine.stack).toBeDefined()
     expect(errorLine.requestId).toBe(res.headers['x-request-id'])
+  })
+})
+
+describe('expected server errors (AppError 5xx)', () => {
+  it('are sent as-is and NOT logged as "unhandled error" (they are not bugs)', async () => {
+    const { log, lines } = memoryLogger()
+    const res = await request(appWithFailingRoutes(log)).get('/expected-503')
+
+    expect(res.status).toBe(503)
+    expect(res.body.error.code).toBe('STORAGE_UNAVAILABLE')
+    expect(lines.find((l) => l.msg === 'unhandled error')).toBeUndefined()
+    // The request itself is still logged, at error level, with the code
+    expect(lines).toContainEqual(expect.objectContaining({ msg: 'request failed', status: 503, errorCode: 'STORAGE_UNAVAILABLE' }))
   })
 })
 

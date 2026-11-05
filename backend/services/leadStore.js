@@ -1,53 +1,46 @@
-// The data store: the ONLY file that knows where data is kept.
-// Stage 2: plain arrays in memory, seeded with sample data (reset on restart).
-// Stage 3: these same functions will read and write Google Sheets instead.
+// Chooses WHERE data is kept, based on config.dataStore, and exposes one set of
+// functions to the services. The services never know (or care) which store is active.
 //
-// Every function is async even though arrays are instant. Google Sheets calls
-// WILL be async (network requests), so if the interface is async now, the code
-// that calls it doesn't need to change in Stage 3.
+//   memory → stores/memoryStore.js, seeded with SIMULATED sample data (the default)
+//   sheets → stores/sheetsStore.js, Google Sheets (needs the GOOGLE_* settings)
+import { config } from '../config.js'
+import { createMemoryStore } from './stores/memoryStore.js'
+import { createSheetsStore } from './stores/sheetsStore.js'
+import { createSheetsClient } from './stores/sheetsClient.js'
 import { sampleLeads } from '../data/sampleLeads.js'
 import { sampleActivity } from '../data/sampleActivity.js'
 import { sampleWorkflowRuns } from '../data/sampleWorkflowRuns.js'
 
-let leads = []
-let activity = []
-let workflowRuns = []
+function createStore(type) {
+  if (type === 'memory') {
+    return createMemoryStore({ leads: sampleLeads, activity: sampleActivity, workflowRuns: sampleWorkflowRuns })
+  }
+  if (type === 'sheets') {
+    // config.google has already been checked: the server won't start if a setting is missing.
+    const client = createSheetsClient({ ...config.google, timeoutMs: config.sheetsTimeoutMs })
+    return createSheetsStore({ client, cacheMs: config.sheetsCacheMs })
+  }
+  // Never silently fall back to memory: someone could believe leads are saved when they aren't.
+  throw new Error(`Unknown DATA_STORE "${type}"`)
+}
 
-/** Restores the sample data. Runs once at startup, and before each test. */
+const store = createStore(config.dataStore)
+
+/** Which store is active ('memory' or 'sheets'). Used by health checks and logs. */
+export const storeName = store.name
+
+/** Restores the sample data (memory store only). Used before each test. */
 export function resetStore() {
-  // structuredClone makes deep copies, so changes never touch the original sample arrays.
-  leads = structuredClone(sampleLeads)
-  activity = structuredClone(sampleActivity)
-  workflowRuns = structuredClone(sampleWorkflowRuns)
-}
-resetStore()
-
-// Callers always get copies. If a caller changes an object it received,
-// our stored data stays unchanged. A real database behaves the same way.
-
-export async function listLeads() {
-  return structuredClone(leads)
+  if (!store.reset) throw new Error(`The ${store.name} store cannot be reset`)
+  store.reset()
 }
 
-export async function findLeadById(id) {
-  const lead = leads.find((l) => l.id === id)
-  return lead ? structuredClone(lead) : null
-}
-
-export async function insertLead(lead) {
-  leads.push(structuredClone(lead))
-  return structuredClone(lead)
-}
-
-export async function listActivity() {
-  return structuredClone(activity)
-}
-
-export async function insertActivity(event) {
-  activity.push(structuredClone(event))
-  return structuredClone(event)
-}
-
-export async function listWorkflowRuns() {
-  return structuredClone(workflowRuns)
-}
+// The store interface used by the services.
+export const listLeads = () => store.listLeads()
+export const findLeadById = (id) => store.findLeadById(id)
+export const insertLead = (lead) => store.insertLead(lead)
+export const listActivity = () => store.listActivity()
+export const insertActivity = (event) => store.insertActivity(event)
+export const listWorkflowRuns = () => store.listWorkflowRuns()
+/** Resolves if storage is reachable and correctly set up. Otherwise throws a 503 AppError. */
+export const pingStore = () => store.ping()

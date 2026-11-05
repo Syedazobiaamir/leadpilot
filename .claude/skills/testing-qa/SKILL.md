@@ -28,6 +28,8 @@ Run the tests with a time limit (e.g. `timeout 120 npx vitest run`) so a hung ru
 - **Frontend service** (`leadService.js`): mock `fetch` for success, `400`, `409`, `500`, network failure, timeout, and non-JSON responses.
 - **Components**: use `installFakeApi()` from `src/test/fakeApi.js` (and `{ failWith: 'network' }` for server-down). Query by role or label (`getByRole`, `getByLabelText`), not CSS classes. Check that failures are never shown as success or as empty data.
 - **Shared schema**: `backend/tests/schemaSync.test.js` must stay green. Edit both copies of `leadSchema.js`.
+- **Stores**: every store must pass `backend/tests/storeContract.js` (run it via `runStoreContract(name, makeStore)`).
+- **External services**: use fakes (`backend/tests/fakeSheetsClient.js`, with `failNext(kind)` for failures). Tests never touch the network: `config.js` forces the memory store in tests.
 
 ## Honesty rules
 - Paste the **real** test output. Never summarize results that weren't actually run.
@@ -35,6 +37,9 @@ Run the tests with a time limit (e.g. `timeout 120 npx vitest run`) so a hung ru
 - If a run hangs or gives odd numbers, don't count it as evidence. Re-run it with a time limit and report what happened.
 - Never weaken or delete a test just to make it pass. Fix the code, or explain why the test was wrong.
 - Write down what is **not** tested (e.g. visual layout, load and performance).
+
+## Failure drills (for anything that talks to an external service)
+Run the real server on a spare port (e.g. 3002) with overridden env vars, never editing `.env`: wrong ID, wrong credentials, unreachable network, a network that never answers. Make reversible hand edits too (a broken row, a renamed tab) and always restore them. Expect a clear `503`, a precise log `kind`, no crash, nothing saved, and no secrets in the log. The Stage 3 drills found a real bug (missing deadline), so they are worth running. Details are in the `api-integration` skill.
 
 ## Manual end-to-end check
 Automated tests don't replace actually using the app. Start both servers, go through the checklist in `frontend/README.md`, run `npm run smoke`, and ask the developer to confirm.
