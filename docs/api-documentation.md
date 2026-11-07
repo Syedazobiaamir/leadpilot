@@ -80,6 +80,7 @@ Monitoring (n8n, Stage 6) should alert when `/ready` fails, and restart the serv
 | `aiReason` | string \| null | AI | One-sentence explanation |
 | `aiModel` | string \| null | AI flow | The exact model version that classified the lead, or **`simulated`** for hand-written sample data |
 | `qualifiedAt` | ISO date \| null | AI flow | When the AI result was saved |
+| `reviewFlags` | string[] | Validation Agent | Stage 5 quality flags, e.g. `["too_vague"]`. Empty = no issues. See [`ai-agents.md`](ai-agents.md) |
 
 A **failed re-qualification keeps the previous** `classification`, `score`, `aiReason` and `aiModel` (only `qualificationStatus` becomes `failed`). Leads created before Stage 4 have empty AI cells: they read as `qualified` + `simulated` if they have a classification (there was no AI before Stage 4), otherwise `pending`.
 
@@ -143,7 +144,7 @@ Location: /api/leads/LD-1011
 ```
 A successful create also writes an activity event (lead ID only, no personal data).
 
-**AI qualification runs in the background** after the lead is saved: the response never waits for the AI, and an AI failure never loses the lead. A few seconds later the lead becomes `qualified` (or `failed`). Poll `GET /api/leads/:id`. With AI disabled the lead stays `pending`.
+**The agents run in the background** after the lead is saved (Stage 5 Orchestrator: Validation Agent → AI qualification → follow-up draft for Hot leads). The response never waits for the AI, and an AI failure never loses the lead. A few seconds later the lead has its `reviewFlags` and becomes `qualified` (or `failed`; or stays `pending` if it was blocked as test/spam or AI is disabled). Poll `GET /api/leads/:id`.
 
 | Status | Code | When | Retry? |
 |---|---|---|---|
@@ -172,6 +173,42 @@ The lead is marked `pending` and the AI runs **in the background** (so this requ
 
 Each AI run writes an activity event: `ai` (`LD-1005 classified as Cold (score 25) by gemini-2.5-flash`) or `error` (`AI qualification failed for LD-1005: … (temporary, can be retried)`). A suspected prompt injection adds an `error` event: `Possible prompt injection in LD-…`.
 
+### Follow-up drafts (Stage 5)
+The AI writes **drafts only**; a person approves, edits or rejects them. **Nothing is sent by this API** (approved drafts are sent by n8n in Stage 6).
+
+**Follow-up object:** `id` (`FU-...`), `leadId`, `channel` (`email`), `subject`, `body`, `status` (`draft` | `approved` | `rejected`), `aiModel`, `createdAt`, `decidedAt`, `editedAt`.
+
+#### `GET /api/leads/:id/followups`
+The lead's follow-ups, newest first. `200 { "data": [ ... ], "count": 1 }`. Errors: `400 INVALID_LEAD_ID`, `404 LEAD_NOT_FOUND`.
+
+#### `POST /api/leads/:id/followups`
+Asks the Follow-up Agent for a draft. It is written **in the background**, so poll the GET above.
+```json
+202 Accepted
+{ "data": { "leadId": "LD-1001", "status": "generating" } }
+```
+If the lead already has an open `draft`, no new draft is written (the agent run is recorded as `skipped`). Errors: `400 INVALID_LEAD_ID`, `404 LEAD_NOT_FOUND`, `503 AI_UNAVAILABLE` (no AI key). AI failures and unsafe drafts (prices, promises, placeholders…) are recorded in AgentRuns, and no draft is saved.
+
+#### `POST /api/followups/:id/approve` · `POST /api/followups/:id/reject`
+A person's decision. `200 { "data": { ...followUp, "status": "approved", "decidedAt": "..." } }`. Writes an activity event (`… approved by staff (not sent: sending arrives in Stage 6)`).
+
+#### `PATCH /api/followups/:id`
+A person edits a draft. Body: `{ "subject": "5-80 chars", "body": "20-2000 chars" }`. The result stays a `draft` with `editedAt` set. Only shape and length are checked: the AI's content rules don't apply to a person's own words.
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_FOLLOWUP_ID` | ID is not in the `FU-...` format |
+| 400 | `VALIDATION_ERROR` | Edit: subject or body too short or long (`details` per field) |
+| 404 | `FOLLOWUP_NOT_FOUND` | No follow-up with that ID |
+| 409 | `FOLLOWUP_ALREADY_DECIDED` | It is already approved or rejected and can no longer change |
+
+### `GET /api/agent-runs`
+The audit trail of agent runs (Stage 5), newest first. Never contains personal data.
+```json
+200 { "data": [ { "runId": "AR-...", "leadId": "LD-1013", "agent": "orchestrator", "status": "success", "durationMs": 11785, "errorKind": null, "detail": "validation: ok → qualification: Hot 95 → followup: draft FU-...", "startedAt": "..." } ], "count": 7 }
+```
+`agent`: `orchestrator`, `validation`, `qualification`, `followup`. `status`: `success`, `skipped`, `failed`, `denied` (an agent tried to use a tool it may not use).
+
 ### `GET /api/activity`
 Activity and audit events, newest first. `type` is one of `lead`, `ai`, `automation`, `error`, `recovery` or `escalation`.
 ```json
@@ -198,6 +235,9 @@ Automation workflow runs, newest first. **Simulated sample data** until n8n is c
 | `INVALID_LEAD_ID` | 400 | Yes | Malformed lead ID |
 | `NOT_FOUND` | 404 | Yes | Unknown route |
 | `LEAD_NOT_FOUND` | 404 | Yes | Lead does not exist |
+| `INVALID_FOLLOWUP_ID` | 400 | Yes | Malformed follow-up ID |
+| `FOLLOWUP_NOT_FOUND` | 404 | Yes | Follow-up does not exist |
+| `FOLLOWUP_ALREADY_DECIDED` | 409 | Yes | Follow-up already approved or rejected |
 | `DUPLICATE_LEAD` | 409 | Yes | Lead already exists |
 | `PAYLOAD_TOO_LARGE` | 413 | Yes | Body too large |
 | `INTERNAL_ERROR` | 500 | No (may be temporary) | Unexpected server error |
@@ -206,7 +246,8 @@ Automation workflow runs, newest first. **Simulated sample data** until n8n is c
 
 "Permanent" means sending the same request again will fail the same way. Only non-permanent errors should ever be retried.
 
-## Known limitations (Stage 4)
+## Known limitations (Stage 5)
+- Follow-up drafts are never sent by this API (Stage 6). Decisions are not tied to a user (no login until Stage 8).
 - **AI free tier: 20 requests per day** for `gemini-2.5-flash` (verified from Google's own 429 response on 2026-11-05). After that, AI runs fail with `quota_exhausted` until the daily reset. Real use needs a paid tier (rotate the exposed key first).
 - AI results are not always right: see the measured accuracy in [`ai-qualification.md`](ai-qualification.md).
 - No automatic AI retries yet: a failed lead stays `failed` until someone clicks Retry (Stage 7).

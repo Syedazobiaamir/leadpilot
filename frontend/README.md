@@ -2,8 +2,9 @@
 
 The React dashboard for the AI Lead Management & Self-Healing Automation Platform.
 
-> **Stage 4 status:** the UI loads and saves data through the Express API (`backend/`), and shows the
-> **Gemini AI** qualification of each lead (or clearly marks it **Simulated** for sample data).
+> **Stage 5 status:** the UI loads and saves data through the Express API (`backend/`), shows the
+> **Gemini AI** qualification of each lead (or clearly marks it **Simulated**), the Validation Agent's
+> **Needs review** flags, the AI **follow-up drafts** with Approve / Edit / Reject, and the real **agent runs**.
 > The backend stores it in **Google Sheets** (persistent) or **in memory** (resets on restart), depending on
 > `DATA_STORE` in `backend/.env`. The data starts as **simulated sample data**.
 > No AI (Gemini), database (Google Sheets) or automation (n8n) is connected yet.
@@ -48,6 +49,9 @@ The browser only talks to port 5173, so no CORS setup is needed.
 | Clear errors when the server is down, slow (10s timeout) or failing, with a *Try again* button | Working |
 | Hot/Warm/Cold classification | **Gemini AI** for new leads (when the server has a key). Sample leads are marked **Simulated** |
 | AI qualification panel (lead detail) | Shows the AI reason, the source (Gemini model + time, or Simulated), "analyzing" while pending, and *Qualify with AI* / *Re-run AI* / *Retry AI*. A failed re-run keeps and shows the previous result |
+| Needs review (Validation Agent) | Badge in the table, and the flags explained in the lead detail ("AI skipped" for blocked leads) |
+| Follow-up email panel (lead detail) | The AI draft, marked "not sent · needs approval"; Approve / Edit / Reject; "Draft follow-up with AI". Approved = "not sent yet (Stage 6)" |
+| Agent runs (Automation page, dashboard) | Real records of every agent run. The n8n workflow runs are labelled **simulated** |
 | Automatic refresh while AI works | The list re-fetches every 3 s while a lead is pending, and stops when the result arrives or after 60 s |
 | Automation monitoring (success / retrying / failed / escalated) | **Simulated** runs. n8n arrives in Stage 6 |
 | Activity & audit log | Sample events, plus real events for leads you create |
@@ -103,3 +107,6 @@ Start both servers first.
 13. **AI** (needs `GEMINI_API_KEY` and free quota): create a lead with an urgent message → table shows *Pending*, then within a few seconds *Hot* (no refresh needed). Open it → *Gemini AI* + model + reason.
 14. Open a sample lead (e.g. Maria Gonzalez) → AI panel shows *Simulated*, "not a real AI result", and *Qualify with AI*.
 15. With AI off or quota used up, *Qualify with AI* → a clear message, or *AI failed* + *Retry AI*. A lead that had a result keeps showing it.
+16. A lead flagged by the Validation Agent shows *Needs review* in the table, and its flags in the detail.
+17. A Hot lead's detail shows the follow-up **draft**. *Edit* → change the subject → *Save draft* (still a draft). *Approve* → "Approved · not sent yet". *Reject* on another → "Rejected" + *Draft a new follow-up with AI*.
+18. *Automation* → *Agent runs* lists orchestrator / validation / qualification / followup runs; *Workflow runs (simulated)* is labelled as sample data.

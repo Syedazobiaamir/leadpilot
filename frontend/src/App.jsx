@@ -10,6 +10,7 @@ import LeadTable from './components/leads/LeadTable.jsx'
 import LeadDetail from './components/leads/LeadDetail.jsx'
 import AutomationStatus from './components/monitoring/AutomationStatus.jsx'
 import ActivityLog from './components/monitoring/ActivityLog.jsx'
+import AgentRuns from './components/monitoring/AgentRuns.jsx'
 import { useLeads } from './hooks/useLeads.js'
 import { useMonitoring } from './hooks/useMonitoring.js'
 import { filterLeads } from './utils/leadStats.js'
@@ -18,7 +19,7 @@ const PAGES = [
   { id: 'dashboard', label: 'Dashboard', title: 'Dashboard', subtitle: 'Lead pipeline and automation health at a glance' },
   { id: 'leads', label: 'Leads', title: 'Leads', subtitle: 'Search, filter and review customer inquiries' },
   { id: 'new-lead', label: 'New Lead', title: 'Capture a new lead', subtitle: 'Enter a customer inquiry. It is validated before it is saved.' },
-  { id: 'monitoring', label: 'Automation', title: 'Automation monitoring', subtitle: 'Workflow runs, retries, escalations and the audit log' },
+  { id: 'monitoring', label: 'Automation', title: 'Automation monitoring', subtitle: 'AI agent runs, the audit log, and (simulated) workflow runs' },
 ]
 
 const DEFAULT_FILTERS = { classification: 'All', status: 'All', search: '' }
@@ -32,6 +33,7 @@ export default function App() {
   const {
     activity,
     workflowRuns,
+    agentRuns,
     loading: monLoading,
     error: monError,
     reload: reloadMonitoring,
@@ -99,16 +101,24 @@ export default function App() {
         return <LeadCaptureForm onSubmit={handleCreateLead} />
       case 'monitoring':
         return (
-          <div className="two-col">
+          <>
+            <div className="two-col">
+              <section className="card">
+                <h2>Agent runs</h2>
+                <p className="muted small">Real records of what each AI agent did (newest first).</p>
+                <AgentRuns runs={agentRuns} />
+              </section>
+              <section className="card">
+                <h2>Activity &amp; audit log</h2>
+                <ActivityLog events={activity} />
+              </section>
+            </div>
             <section className="card">
-              <h2>Workflow runs</h2>
+              <h2>Workflow runs (simulated)</h2>
+              <p className="muted small">Sample data showing what n8n automation runs will look like. n8n is connected in Stage 6.</p>
               <AutomationStatus runs={workflowRuns} />
             </section>
-            <section className="card">
-              <h2>Activity &amp; audit log</h2>
-              <ActivityLog events={activity} />
-            </section>
-          </div>
+          </>
         )
       default: {
         const hotLeads = leads.filter((lead) => lead.classification === 'Hot').slice(0, 4)
@@ -132,8 +142,8 @@ export default function App() {
                 </ul>
               </section>
               <section className="card">
-                <h2>Recent automation runs</h2>
-                <AutomationStatus runs={workflowRuns} limit={4} />
+                <h2>Recent agent runs</h2>
+                <AgentRuns runs={agentRuns} limit={4} />
               </section>
             </div>
             <section className="card">

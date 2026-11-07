@@ -566,3 +566,49 @@ button:focus-visible {
 .ai-pending { color: var(--warm); }
 .ai-failed { color: var(--danger); }
 .ai-reason { font-style: italic; }
+
+/* ---------- Agents & follow-ups (Stage 5) ---------- */
+.small { font-size: 0.8rem; }
+
+.review-box {
+  border: 1px solid color-mix(in srgb, var(--warm) 45%, transparent);
+  background: var(--warm-bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 4px;
+}
+.review-box.review-blocked {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--danger-bg);
+}
+.review-box h3 { margin: 0 0 4px; font-size: 0.9rem; }
+.review-box ul { margin: 6px 0 0; padding-left: 0; list-style: none; font-size: 0.85rem; }
+.review-box li { margin: 3px 0; }
+
+.badge-flag-block { background: var(--danger-bg); color: var(--danger); }
+.badge-flag-review { background: var(--warm-bg); color: var(--warm); }
+.cell-sub + .badge { margin-top: 3px; }
+
+.followup { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.followup p { margin: 0; }
+.followup-body {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.9rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.badge-followup-draft { background: var(--warm-bg); color: var(--warm); }
+.badge-followup-approved { background: var(--success-bg); color: var(--success); }
+.badge-followup-rejected { background: var(--pending-bg); color: var(--pending); }
+.followup-edit { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.button-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.agent-status-success { background: var(--success-bg); color: var(--success); }
+.agent-status-skipped { background: var(--pending-bg); color: var(--pending); }
+.agent-status-failed { background: var(--danger-bg); color: var(--danger); }
+.agent-status-denied { background: var(--hot-bg); color: var(--hot); }
+.run-detail { margin: 6px 0 0; font-size: 0.85rem; overflow-wrap: anywhere; }

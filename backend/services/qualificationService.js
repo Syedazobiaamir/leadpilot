@@ -1,102 +1,50 @@
-// AI lead qualification: lead → AI → validate → save.
-// (In Stage 5 this becomes the "Lead Qualification Agent".)
+// AI lead qualification: the ORCHESTRATION around the Lead Qualification Agent.
+// The AI work itself lives in agents/qualificationAgent.js (Stage 5); this file decides
+// WHEN it runs and keeps the public API the rest of the app uses:
 //
 //   start(id)       background: called right after a lead is saved. Never throws, never blocks.
 //   requalify(id)   for POST /api/leads/:id/qualify: marks the lead "pending", then runs
 //                   in the background too (so the request stays inside the 10s budget).
-//   qualifyNow(id)  the actual work. Used by start/requalify, and by tests and scripts.
+//   qualifyNow(id)  runs the agent once. Used by start/requalify, and by tests and scripts.
 //
-// Honest outcomes only:
+// Every run is recorded in AgentRuns (via runAgent). Honest outcomes only:
 //   success → classification, score, aiReason, aiModel, qualifiedAt, status "qualified"
 //   failure → status "failed", the OLD classification (if any) is kept, and the reason
-//             goes to the log and the activity log. Never a guessed or partial result.
+//             goes to the log, the activity log and AgentRuns. Never a guessed or partial result.
 import { AppError } from '../utils/AppError.js'
 import { logger as defaultLogger } from '../utils/logger.js'
 import { config } from '../config.js'
 import * as leadStore from './leadStore.js'
 import { AiError, createGeminiClient } from './ai/geminiClient.js'
-import {
-  QUALIFICATION_SETTINGS,
-  RESPONSE_SCHEMA,
-  SYSTEM_INSTRUCTIONS,
-  buildQualificationPrompt,
-  qualificationResultSchema,
-} from './ai/qualificationPrompt.js'
+import { createQualificationAgent } from '../agents/qualificationAgent.js'
+import { createToolRegistry } from '../agents/toolRegistry.js'
+import { createTools } from '../agents/tools.js'
+import { runAgent } from '../agents/runAgent.js'
 
 /**
  * ai:     a Gemini client ({ model, generateJson }), or null when AI is disabled
- * store:  the lead store (findLeadById, updateLead, insertActivity)
+ * store:  the lead store (findLeadById, updateLead, insertActivity, insertAgentRun)
  * logger, now: injectable for tests
  */
 export function createQualificationService({ ai, store = leadStore, logger = defaultLogger, now = () => new Date() }) {
   const running = new Map() // lead ID → promise of the qualification in progress
+  const agent = ai ? createQualificationAgent({ ai, now }) : null
+  const registry = createToolRegistry(createTools({ store, now }), { logger })
+  if (agent) registry.checkAgent(agent) // fail fast if the agent asks for a tool that doesn't exist
 
   function aiDisabledError() {
     return new AppError(503, 'AI_UNAVAILABLE', 'AI qualification is not configured on this server.')
   }
 
-  async function audit(type, message, leadId) {
-    try {
-      await store.insertActivity({ id: `EV-${Date.now()}-${leadId}-${type}`, type, message, leadId, timestamp: now().toISOString() })
-    } catch (err) {
-      // An audit write failing must not hide the real outcome. The store has already logged why.
-      logger.warn('could not write activity event', { leadId, type, error: err.code ?? err.message })
-    }
-  }
-
-  /** Asks the AI and returns a VALIDATED result, or throws an AiError. */
-  async function askAi(lead) {
-    const { data, model } = await ai.generateJson({
-      system: SYSTEM_INSTRUCTIONS,
-      prompt: buildQualificationPrompt(lead),
-      schema: RESPONSE_SCHEMA,
-      ...QUALIFICATION_SETTINGS,
-    })
-    const parsed = qualificationResultSchema.safeParse(data)
-    if (!parsed.success) {
-      // Log what was wrong (field names and rules only, never the customer's message).
-      const problems = parsed.error.issues.map((i) => `${i.path.join('.') || '(answer)'}: ${i.message}`)
-      logger.warn('ai answer rejected', { leadId: lead.id, model, problems })
-      throw new AiError('invalid_output', `The AI answer did not pass validation (${problems.join('; ')}).`, { temporary: true })
-    }
-    return { ...parsed.data, model }
-  }
-
-  /** Does the work. Returns the updated lead. Throws AppError (404, 503 AI_UNAVAILABLE / STORAGE_UNAVAILABLE). */
+  /** Runs the agent once. Returns the updated lead. Throws AppError (404, 503 AI_UNAVAILABLE / STORAGE_UNAVAILABLE). */
   async function qualifyNow(id) {
     if (!ai) throw aiDisabledError()
-    const lead = await store.findLeadById(id)
-    if (!lead) throw new AppError(404, 'LEAD_NOT_FOUND', `No lead found with ID ${id}`)
-
-    let result
-    try {
-      result = await askAi(lead)
-    } catch (err) {
-      if (!(err instanceof AiError)) throw err // a bug: let it surface as a 500
-      logger.error('ai qualification failed', {
-        leadId: id, kind: err.kind, temporary: err.temporary, reason: err.message,
-        httpStatus: err.httpStatus, apiStatus: err.apiStatus, retryAfterSeconds: err.retryAfterSeconds, model: ai.model,
-      })
-      await store.updateLead(id, { qualificationStatus: 'failed' })
-      await audit('error', `AI qualification failed for ${id}: ${err.message} (${err.temporary ? 'temporary, can be retried' : 'needs attention'})`, id)
+    const outcome = await runAgent({ agent, input: { leadId: id }, registry, store, logger, now })
+    if (outcome.ok) return outcome.result.lead
+    if (outcome.error instanceof AiError) {
       throw new AppError(503, 'AI_UNAVAILABLE', 'AI qualification failed. The lead was saved and can be qualified again later.')
     }
-
-    const updated = await store.updateLead(id, {
-      classification: result.classification,
-      score: result.score,
-      aiReason: result.reason,
-      aiModel: result.model,
-      qualificationStatus: 'qualified',
-      qualifiedAt: now().toISOString(),
-    })
-    logger.info('lead qualified', { leadId: id, classification: result.classification, score: result.score, model: result.model, injectionSuspected: result.injectionSuspected })
-    await audit('ai', `${id} classified as ${result.classification} (score ${result.score}) by ${result.model}`, id)
-    if (result.injectionSuspected) {
-      // Security audit trail: someone may have tried to manipulate the AI through the form.
-      await audit('error', `Possible prompt injection in ${id}: the inquiry contained instructions to the AI. They were ignored.`, id)
-    }
-    return updated
+    throw outcome.error // 404, storage problems (503), permission errors and bugs keep their own meaning
   }
 
   /** Runs qualifyNow in the background, at most once per lead at a time. Returns the promise. */
@@ -119,10 +67,15 @@ export function createQualificationService({ ai, store = leadStore, logger = def
 
     qualifyNow,
 
-    /** After a new lead is saved. Does nothing when AI is disabled (the lead stays "pending"). */
+    /**
+     * Starts qualification in the background (at most one job per lead). Does nothing when AI is
+     * disabled (the lead stays "pending"). Returns the job's promise, which resolves to the
+     * updated lead, or null if it failed (failures are already logged and recorded). The
+     * Orchestrator awaits it; other callers can ignore it.
+     */
     start(id) {
-      if (!ai) return
-      runInBackground(id)
+      if (!ai) return Promise.resolve(null)
+      return runInBackground(id)
     },
 
     /** Manual (re)qualification: mark "pending" now, run in the background. Returns the pending lead. */

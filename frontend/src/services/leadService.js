@@ -96,6 +96,42 @@ export async function getWorkflowRuns() {
   return (await request('/workflow-runs')).data
 }
 
+/** Agent runs (Stage 5): the REAL record of what each agent did, newest first. */
+export async function getAgentRuns() {
+  return (await request('/agent-runs')).data
+}
+
+// ---- Follow-up drafts (Stage 5) --------------------------------------------------------
+// Every function returns { success: true, ... } or { success: false, code, error, details? }
+// so the UI can show the server's own message (e.g. "already approved").
+
+async function attempt(work) {
+  try {
+    return { success: true, ...(await work()) }
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err
+    return { success: false, code: err.code, error: err.message, details: err.details }
+  }
+}
+
+/** The follow-up drafts of one lead, newest first. */
+export const getFollowUps = (leadId) =>
+  attempt(async () => ({ followUps: (await request(`/leads/${encodeURIComponent(leadId)}/followups`)).data }))
+
+/** Asks the Follow-up Agent for a new draft (202: it is written in the background). */
+export const requestFollowUp = (leadId) =>
+  attempt(async () => ({ request: (await request(`/leads/${encodeURIComponent(leadId)}/followups`, { method: 'POST' })).data }))
+
+/** A PERSON approves a draft. Nothing is sent here (sending is Stage 6). */
+export const approveFollowUp = (id) =>
+  attempt(async () => ({ followUp: (await request(`/followups/${encodeURIComponent(id)}/approve`, { method: 'POST' })).data }))
+
+export const rejectFollowUp = (id) =>
+  attempt(async () => ({ followUp: (await request(`/followups/${encodeURIComponent(id)}/reject`, { method: 'POST' })).data }))
+
+export const editFollowUp = (id, changes) =>
+  attempt(async () => ({ followUp: (await request(`/followups/${encodeURIComponent(id)}`, { method: 'PATCH', body: changes })).data }))
+
 /**
  * Asks the server to (re)qualify a lead with AI. The server answers 202 right away with the
  * lead marked "pending"; the AI result appears on the lead a few seconds later.

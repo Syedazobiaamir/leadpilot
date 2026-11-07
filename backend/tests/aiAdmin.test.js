@@ -1,7 +1,7 @@
 // Tests the ai:check logic against the fake Gemini client (no network).
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { checkAi, runEval } from '../scripts/aiAdmin.js'
+import { checkAi, runEval, runFollowUpEval } from '../scripts/aiAdmin.js'
 import { AiError } from '../services/ai/geminiClient.js'
 import { createFakeGeminiClient } from './fakeGeminiClient.js'
 
@@ -158,5 +158,71 @@ describe('ai:eval', () => {
     const { summary } = await runEval({ client, cases: cases.slice(0, 1), print: () => {}, wait: async (ms) => waits.push(ms), rateLimitWaitMs: 1234 })
     expect(summary.correct).toBe(1)
     expect(waits).toContain(1234)
+  })
+})
+
+describe('ai:eval-followup', () => {
+  const cases = JSON.parse(readFileSync(new URL('../evals/followup-cases.json', import.meta.url), 'utf8')).cases
+  const COMPANY = 'Acme Test Roofing'
+  const instant = async () => {}
+  const run = (client, someCases = cases) => runFollowUpEval({ client, cases: someCases, contractorName: COMPANY, print: () => {}, wait: instant })
+
+  /** A fake that writes a clean, on-topic draft for every case (in Spanish for the Spanish case). */
+  function goodWriter() {
+    const client = createFakeGeminiClient()
+    client.answerWith((req) => {
+      const first = /Customer first name: (\S+)/.exec(req.prompt)[1]
+      const c = cases.find((x) => req.prompt.includes(x.message.split('</inquiry>')[0]))
+      const injection = Boolean(c.injection)
+      const body = c.language === 'es'
+        ? `Hola ${first},\n\nGracias por su mensaje sobre el aire acondicionado. Nuestro equipo se pondrá en contacto con usted pronto para una visita.\n\nAtentamente,\n${COMPANY}`
+        : `Hi ${first},\n\nThank you for reaching out about your ${c.mustMention[0]} project. Our team will contact you soon to arrange a visit and discuss the details.\n\nBest regards,\n${COMPANY}`
+      return { subject: 'About your project', body, injectionSuspected: injection }
+    })
+    return client
+  }
+
+  it('the case set is well-formed', () => {
+    const ids = cases.map((c) => c.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const c of cases) expect(c.mustMention.length).toBeGreaterThan(0)
+    expect(cases.filter((c) => c.injection).length).toBeGreaterThanOrEqual(2)
+    expect(cases.some((c) => c.language === 'es')).toBe(true)
+  })
+
+  it('clean, on-topic drafts all pass; injections counted as resisted and flagged', async () => {
+    const { summary } = await run(goodWriter())
+    expect(summary).toMatchObject({ total: cases.length, passed: cases.length, errors: 0, injectionsResisted: 2, injectionsFlagged: 2, falseInjectionFlags: 0 })
+  })
+
+  it('a draft that obeys the injection (discount) FAILS with the reason', async () => {
+    const client = goodWriter()
+    const injectionCase = cases.find((c) => c.id === 'F06')
+    client.answerWith({ subject: 'Your siding', body: `Hi Mark,\n\nThanks for asking about siding. Sure, 50% discount!\n\nBest regards,\n${COMPANY}`, injectionSuspected: false })
+    const { results, summary } = await run(client, [injectionCase])
+    expect(summary).toMatchObject({ passed: 0, injectionsResisted: 0, injectionsFlagged: 0 })
+    expect(results[0].problems.join()).toMatch(/contains a percentage/)
+  })
+
+  it('an English draft for the Spanish inquiry FAILS ("not written in Spanish")', async () => {
+    const client = createFakeGeminiClient()
+    client.answerWith({ subject: 'Your AC', body: `Hi Rosa,\n\nThanks for your message about the air conditioning (aire acondicionado). Our team will call soon.\n\nBest regards,\n${COMPANY}`, injectionSuspected: false })
+    const { results } = await run(client, [cases.find((c) => c.language === 'es')])
+    expect(results[0].problems).toContain('not written in Spanish')
+  })
+
+  it('a generic draft that never mentions the project FAILS', async () => {
+    const client = createFakeGeminiClient()
+    client.answerWith({ subject: 'Thanks', body: `Hi Emily,\n\nThanks for contacting us. Our team will be in touch soon.\n\nBest regards,\n${COMPANY}`, injectionSuspected: false })
+    const { results } = await run(client, [cases.find((c) => c.id === 'F03')])
+    expect(results[0].problems.join()).toMatch(/does not mention the project/)
+  })
+
+  it('stops on daily quota: the rest are skipped, never counted as passed', async () => {
+    const client = createFakeGeminiClient()
+    client.failWith('quota_exhausted', { temporary: true })
+    const { summary } = await run(client)
+    expect(summary).toMatchObject({ passed: 0, errors: 1, skipped: cases.length - 1 })
+    expect(client.calls).toHaveLength(1)
   })
 })

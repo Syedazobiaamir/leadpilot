@@ -1,7 +1,7 @@
 // Tests the sheets:check and sheets:setup logic against a fake spreadsheet.
 import { describe, expect, it } from 'vitest'
 import { checkSheets, setupSheets } from '../scripts/sheetsAdmin.js'
-import { headerFor } from '../services/stores/sheetsMapper.js'
+import { TABLES, headerFor } from '../services/stores/sheetsMapper.js'
 import { createSheetsStore } from '../services/stores/sheetsStore.js'
 import { createLogger } from '../utils/logger.js'
 import { createFakeSheetsClient, fakeSpreadsheetFromSeed } from './fakeSheetsClient.js'
@@ -23,8 +23,12 @@ describe('sheets:setup', () => {
     expect(client.sheets.Leads).toEqual([headerFor('leads')])
     expect(client.sheets.Activity).toEqual([headerFor('activity')])
     expect(client.sheets.WorkflowRuns).toEqual([headerFor('workflowRuns')])
+    // Every table in TABLES gets its tab with the right header (no hard-coded list to update per stage)
+    for (const table of Object.keys(TABLES)) {
+      expect(client.sheets[TABLES[table].sheet], table).toEqual([headerFor(table)])
+    }
     expect(client.sheets.Sheet1).toEqual([]) // untouched
-    expect(output).toMatch(/Created tab\(s\): Leads, Activity, WorkflowRuns/)
+    expect(output).toContain(`Created tab(s): ${Object.values(TABLES).map((t) => t.sheet).join(', ')}`)
   })
 
   it('with --seed: adds the SIMULATED sample data, which the store can then read', async () => {
@@ -40,7 +44,7 @@ describe('sheets:setup', () => {
   })
 
   it('seeds a tab that has only a header row', async () => {
-    const client = createFakeSheetsClient({ Leads: [headerFor('leads')], Activity: [headerFor('activity')], WorkflowRuns: [headerFor('workflowRuns')] })
+    const client = createFakeSheetsClient({ Leads: [headerFor('leads')], Activity: [headerFor('activity')], AgentRuns: [headerFor('agentRuns')], WorkflowRuns: [headerFor('workflowRuns')] })
     await run(setupSheets, { client, seed: true })
     expect(client.sheets.Leads).toHaveLength(11) // header + 10
   })

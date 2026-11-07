@@ -15,6 +15,17 @@ export function jsonResponse(body, status = 200) {
 
 const newestFirst = (field) => (a, b) => b[field].localeCompare(a[field])
 
+/// What the fake Follow-up Agent writes.
+export const FAKE_DRAFT = {
+  channel: 'email',
+  subject: 'About your project',
+  body: 'Hi there,\n\nThank you for reaching out. Our team will contact you soon to arrange a visit.\n\nBest regards,\nLeadPilot Demo Contracting',
+  status: 'draft',
+  aiModel: 'gemini-fake-001',
+  decidedAt: null,
+  editedAt: null,
+}
+
 // What the fake AI decides when it qualifies a lead.
 export const FAKE_AI_RESULT = {
   classification: 'Hot',
@@ -31,12 +42,15 @@ export const FAKE_AI_RESULT = {
  *   'qualifies' the AI result appears on the lead at the NEXT GET (like a background job)
  *   'fails'     the lead becomes "failed" at the next GET
  */
-export function installFakeApi({ failWith, ai = 'disabled' } = {}) {
+export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'disabled' ? 'disabled' : 'writes' } = {}) {
   const db = {
     leads: structuredClone(sampleLeads),
     activity: structuredClone(sampleActivity),
     workflowRuns: structuredClone(sampleWorkflowRuns),
     pendingAi: new Set(), // lead IDs whose "background" AI job finishes at the next GET
+    agentRuns: [],
+    followUps: [],
+    pendingDrafts: new Set(), // lead IDs whose AI follow-up draft appears at the next GET
   }
 
   // Simulates the server's background AI job finishing.
@@ -62,6 +76,42 @@ export function installFakeApi({ failWith, ai = 'disabled' } = {}) {
     }
     if (method === 'GET' && path === '/api/activity') {
       return jsonResponse({ data: [...db.activity].sort(newestFirst('timestamp')) })
+    }
+    if (method === 'GET' && path === '/api/agent-runs') {
+      return jsonResponse({ data: [...db.agentRuns].sort(newestFirst('startedAt')), count: db.agentRuns.length })
+    }
+    const followUpsOf = path.match(/^\/api\/leads\/(LD-\d+)\/followups$/)
+    if (followUpsOf && method === 'GET') {
+      const leadId = followUpsOf[1]
+      if (db.pendingDrafts.has(leadId)) {
+        db.pendingDrafts.delete(leadId)
+        if (drafts === 'writes') db.followUps.push({ ...FAKE_DRAFT, id: `FU-${db.followUps.length + 1}`, leadId, createdAt: new Date().toISOString() })
+      }
+      const data = db.followUps.filter((f) => f.leadId === leadId).sort(newestFirst('createdAt'))
+      return jsonResponse({ data, count: data.length })
+    }
+    if (followUpsOf && method === 'POST') {
+      if (drafts === 'disabled') return jsonResponse({ error: { code: 'AI_UNAVAILABLE', message: 'AI is not configured on this server, so follow-up drafts cannot be written.' } }, 503)
+      db.pendingDrafts.add(followUpsOf[1])
+      return jsonResponse({ data: { leadId: followUpsOf[1], status: 'generating' } }, 202)
+    }
+    const decision = path.match(/^\/api\/followups\/(FU-[\w-]+)(?:\/(approve|reject))?$/)
+    if (decision) {
+      const followUp = db.followUps.find((f) => f.id === decision[1])
+      if (!followUp) return jsonResponse({ error: { code: 'FOLLOWUP_NOT_FOUND', message: 'No follow-up found' } }, 404)
+      if (followUp.status !== 'draft') {
+        return jsonResponse({ error: { code: 'FOLLOWUP_ALREADY_DECIDED', message: `Follow-up ${followUp.id} is already ${followUp.status} and can no longer be changed` } }, 409)
+      }
+      if (method === 'PATCH') {
+        const changes = JSON.parse(options.body)
+        if (!changes.subject || changes.subject.trim().length < 5) {
+          return jsonResponse({ error: { code: 'VALIDATION_ERROR', message: 'The edited follow-up is invalid', details: { subject: 'Subject must be at least 5 characters' } } }, 400)
+        }
+        Object.assign(followUp, { subject: changes.subject, body: changes.body, editedAt: new Date().toISOString() })
+      } else {
+        Object.assign(followUp, { status: decision[2] === 'approve' ? 'approved' : 'rejected', decidedAt: new Date().toISOString() })
+      }
+      return jsonResponse({ data: structuredClone(followUp) })
     }
     if (method === 'GET' && path === '/api/workflow-runs') {
       return jsonResponse({ data: [...db.workflowRuns].sort(newestFirst('startedAt')) })

@@ -5,6 +5,7 @@ import express from 'express'
 import healthRoutes from './routes/health.routes.js'
 import leadsRoutes from './routes/leads.routes.js'
 import monitoringRoutes from './routes/monitoring.routes.js'
+import followUpRoutes from './routes/followups.routes.js'
 import { requestId } from './middleware/requestId.js'
 import { requestLogger } from './middleware/requestLogger.js'
 import { notFound } from './middleware/notFound.js'
@@ -24,7 +25,8 @@ export function createApp() {
   // 4. Routes
   app.use('/api/health', healthRoutes)
   app.use('/api/leads', leadsRoutes)
-  app.use('/api', monitoringRoutes) // /api/activity and /api/workflow-runs
+  app.use('/api/followups', followUpRoutes)
+  app.use('/api', monitoringRoutes) // /api/activity, /api/workflow-runs and /api/agent-runs
 
   // 5. Nothing matched: 404. Then turn every error into a clean JSON response.
   app.use(notFound)

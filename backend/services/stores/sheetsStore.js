@@ -84,24 +84,25 @@ export function createSheetsStore({ client, cacheMs = 10_000, logger = defaultLo
   }
 
   /**
-   * Changes some fields of one lead. Returns the updated lead, or null if the ID doesn't exist.
+   * Changes some fields of one record (found by its "id" column). Returns the updated record,
+   * or null if the ID doesn't exist. Used for leads and follow-ups.
    * Reads the tab FRESH (not from the cache) to find the row: with a stale cache, a row
-   * deleted by hand in the last few seconds would make us overwrite the WRONG lead.
+   * deleted by hand in the last few seconds would make us overwrite the WRONG record.
    * Cells of columns we don't know (e.g. "notes") are kept.
    */
-  async function updateLead(id, changes) {
-    const { sheet } = TABLES.leads
+  async function updateRecord(table, id, changes) {
+    const { sheet } = TABLES[table]
     try {
-      const { records, rowNumbers, rawRows, positions } = parseSheet('leads', await client.readTab(sheet))
-      const index = records.findIndex((lead) => lead.id === id)
+      const { records, rowNumbers, rawRows, positions } = parseSheet(table, await client.readTab(sheet))
+      const index = records.findIndex((record) => record.id === id)
       if (index === -1) return null
       const updated = { ...records[index], ...changes, id } // the ID itself can never be changed
-      await client.updateRow(sheet, rowNumbers[index], toRowAt('leads', updated, positions, rawRows[index]))
+      await client.updateRow(sheet, rowNumbers[index], toRowAt(table, updated, positions, rawRows[index]))
       return structuredClone(updated)
     } catch (err) {
-      throw toAppError(err, 'update', 'leads')
+      throw toAppError(err, 'update', table)
     } finally {
-      delete cache.leads
+      delete cache[table]
     }
   }
 
@@ -113,10 +114,15 @@ export function createSheetsStore({ client, cacheMs = 10_000, logger = defaultLo
       return (await read('leads')).find((lead) => lead.id === id) ?? null
     },
     insertLead: (lead) => append('leads', lead),
-    updateLead,
+    updateLead: (id, changes) => updateRecord('leads', id, changes),
+    listFollowUps: () => read('followUps'),
+    insertFollowUp: (followUp) => append('followUps', followUp),
+    updateFollowUp: (id, changes) => updateRecord('followUps', id, changes),
     listActivity: () => read('activity'),
     insertActivity: (event) => append('activity', event),
     listWorkflowRuns: () => read('workflowRuns'),
+    listAgentRuns: () => read('agentRuns'),
+    insertAgentRun: (run) => append('agentRuns', run),
 
     /**
      * Readiness check: can we reach the spreadsheet, and does every tab have the

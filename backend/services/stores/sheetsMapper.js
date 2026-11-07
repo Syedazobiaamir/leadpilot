@@ -20,14 +20,33 @@ export const TABLES = {
       // Added in Stage 4 (AI qualification). Optional, because rows created before Stage 4 have
       // these cells empty. leadService fills sensible defaults when reading them.
       qualificationStatus: 'string?', aiReason: 'string?', aiModel: 'string?', qualifiedAt: 'string?',
+      // Added in Stage 5: Validation Agent flag codes, comma-separated (e.g. "too_vague,all_caps").
+      reviewFlags: 'string?',
     },
     // Columns added after the tab was first created. `npm run sheets:setup` may add these
     // to an existing tab (at the end of the header row) without touching any data.
-    addedLater: ['qualificationStatus', 'aiReason', 'aiModel', 'qualifiedAt'],
+    addedLater: ['qualificationStatus', 'aiReason', 'aiModel', 'qualifiedAt', 'reviewFlags'],
   },
   activity: {
     sheet: 'Activity',
     columns: { id: 'string', type: 'string', message: 'string', leadId: 'string?', timestamp: 'string' },
+  },
+  followUps: {
+    // Follow-up message DRAFTS written by the Follow-up Agent (Stage 5). Nothing here is ever
+    // sent by this app: "approved" drafts are sent by n8n in Stage 6.
+    sheet: 'FollowUps',
+    columns: {
+      id: 'string', leadId: 'string', channel: 'string', subject: 'string', body: 'string',
+      status: 'string', aiModel: 'string', createdAt: 'string', decidedAt: 'string?', editedAt: 'string?',
+    },
+  },
+  agentRuns: {
+    // One row per agent run (Stage 5): the audit trail of what each agent did.
+    sheet: 'AgentRuns',
+    columns: {
+      runId: 'string', leadId: 'string?', agent: 'string', status: 'string',
+      durationMs: 'integer', errorKind: 'string?', detail: 'string?', startedAt: 'string',
+    },
   },
   workflowRuns: {
     sheet: 'WorkflowRuns',

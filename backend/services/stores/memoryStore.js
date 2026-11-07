@@ -14,12 +14,16 @@ export function createMemoryStore(seed) {
   let leads = []
   let activity = []
   let workflowRuns = []
+  let agentRuns = []
+  let followUps = []
 
   // structuredClone makes deep copies, so the store and its callers never share objects.
   function reset() {
     leads = structuredClone(seed.leads ?? [])
     activity = structuredClone(seed.activity ?? [])
     workflowRuns = structuredClone(seed.workflowRuns ?? [])
+    agentRuns = structuredClone(seed.agentRuns ?? [])
+    followUps = structuredClone(seed.followUps ?? [])
   }
   reset()
 
@@ -54,6 +58,26 @@ export function createMemoryStore(seed) {
     },
     async listWorkflowRuns() {
       return structuredClone(workflowRuns)
+    },
+    async listFollowUps() {
+      return structuredClone(followUps)
+    },
+    async insertFollowUp(followUp) {
+      followUps.push(structuredClone(followUp))
+      return structuredClone(followUp)
+    },
+    async updateFollowUp(id, changes) {
+      const index = followUps.findIndex((f) => f.id === id)
+      if (index === -1) return null
+      followUps[index] = { ...followUps[index], ...structuredClone(changes), id }
+      return structuredClone(followUps[index])
+    },
+    async listAgentRuns() {
+      return structuredClone(agentRuns)
+    },
+    async insertAgentRun(run) {
+      agentRuns.push(structuredClone(run))
+      return structuredClone(run)
     },
     /** Readiness check. Memory is always reachable. */
     async ping() {

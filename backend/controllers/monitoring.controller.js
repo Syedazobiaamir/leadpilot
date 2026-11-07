@@ -9,3 +9,8 @@ export async function listWorkflowRuns(req, res) {
   const runs = await monitoringService.getWorkflowRuns()
   res.json({ data: runs, count: runs.length })
 }
+
+export async function listAgentRuns(req, res) {
+  const runs = await monitoringService.getAgentRuns()
+  res.json({ data: runs, count: runs.length })
+}

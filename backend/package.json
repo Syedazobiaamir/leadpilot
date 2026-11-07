@@ -14,7 +14,8 @@
     "sheets:check": "node --env-file-if-exists=.env scripts/sheets.js check",
     "sheets:setup": "node --env-file-if-exists=.env scripts/sheets.js setup",
     "ai:check": "node --env-file-if-exists=.env scripts/ai.js check",
-    "ai:eval": "node --env-file-if-exists=.env scripts/ai.js eval"
+    "ai:eval": "node --env-file-if-exists=.env scripts/ai.js eval",
+    "ai:eval-followup": "node --env-file-if-exists=.env scripts/ai.js eval-followup"
   },
   "engines": {
     "node": ">=22"

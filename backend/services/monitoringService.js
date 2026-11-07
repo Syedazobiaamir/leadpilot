@@ -12,3 +12,9 @@ export async function getWorkflowRuns() {
   const runs = await store.listWorkflowRuns()
   return runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt))
 }
+
+/** Agent runs (Stage 5), newest first. */
+export async function getAgentRuns() {
+  const runs = await store.listAgentRuns()
+  return runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+}

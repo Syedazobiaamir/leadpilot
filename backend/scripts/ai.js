@@ -1,22 +1,24 @@
 // Command-line entry for the Gemini AI helpers. Reads settings from backend/.env.
 //
 //   npm run ai:check   check the key, the model and one test classification (2 requests)
-//   npm run ai:eval    run the evaluation set (evals/qualification-cases.json), about one request
-//                      per case, and save the results to evals/last-run.json
+//   npm run ai:eval            qualification eval (evals/qualification-cases.json) → evals/last-run.json
+//   npm run ai:eval-followup   follow-up draft eval (evals/followup-cases.json) → evals/followup-last-run.json
 //
 // The API key is never printed.
 import { readFileSync, writeFileSync } from 'node:fs'
-import { readAiConfig } from '../config.js'
+import { config, readAiConfig } from '../config.js'
 import { createGeminiClient } from '../services/ai/geminiClient.js'
-import { checkAi, runEval } from './aiAdmin.js'
+import { checkAi, runEval, runFollowUpEval } from './aiAdmin.js'
 
 const command = process.argv[2]
 const evalFile = new URL('../evals/qualification-cases.json', import.meta.url)
 const resultFile = new URL('../evals/last-run.json', import.meta.url)
+const followUpEvalFile = new URL('../evals/followup-cases.json', import.meta.url)
+const followUpResultFile = new URL('../evals/followup-last-run.json', import.meta.url)
 
 async function main() {
-  if (!['check', 'eval'].includes(command)) {
-    console.error('Usage: node scripts/ai.js check | eval')
+  if (!['check', 'eval', 'eval-followup'].includes(command)) {
+    console.error('Usage: node scripts/ai.js check | eval | eval-followup')
     return false
   }
   let ai
@@ -35,6 +37,15 @@ async function main() {
   const client = createGeminiClient({ ...ai, timeoutMs: 20_000 })
 
   if (command === 'check') return checkAi({ client, model: ai.model })
+
+  if (command === 'eval-followup') {
+    const { cases } = JSON.parse(readFileSync(followUpEvalFile, 'utf8'))
+    console.log(`Evaluating ${cases.length} FICTIONAL follow-up drafts with ${ai.model} (about ${cases.length} requests)...\n`)
+    const { results, summary } = await runFollowUpEval({ client, cases, contractorName: config.contractorName })
+    writeFileSync(followUpResultFile, JSON.stringify({ model: ai.model, ranAt: new Date().toISOString(), summary, results }, null, 2) + '\n')
+    console.log('\nSaved to evals/followup-last-run.json')
+    return summary.passed === summary.total
+  }
 
   const { cases } = JSON.parse(readFileSync(evalFile, 'utf8'))
   console.log(`Evaluating ${cases.length} FICTIONAL inquiries with ${ai.model} (one at a time, about ${Math.ceil((cases.length * 6) / 60)} min)...\n`)

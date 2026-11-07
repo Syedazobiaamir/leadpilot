@@ -5,6 +5,7 @@ import * as store from './leadStore.js'
 import { AppError } from '../utils/AppError.js'
 import { validateLead } from '../validation/leadSchema.js'
 import { qualification } from './qualificationService.js'
+import { orchestrator } from '../agents/orchestrator.js'
 
 // Lead IDs look like "LD-1001".
 const LEAD_ID = /^LD-\d{1,10}$/
@@ -22,7 +23,15 @@ export function withQualificationDefaults(lead) {
     aiReason: lead.aiReason ?? null,
     aiModel: lead.aiModel ?? (hasClass ? 'simulated' : null),
     qualifiedAt: lead.qualifiedAt ?? null,
+    // Stage 5: stored as one comma-separated cell; the API always returns an array.
+    reviewFlags: parseReviewFlags(lead.reviewFlags),
   }
+}
+
+/** "too_vague,all_caps" → ['too_vague', 'all_caps']; null/empty → []. Arrays pass through. */
+export function parseReviewFlags(value) {
+  if (Array.isArray(value)) return value
+  return String(value ?? '').split(',').map((code) => code.trim()).filter(Boolean)
 }
 
 /** All leads, newest first. */
@@ -31,7 +40,7 @@ export async function getLeads() {
   return leads.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-function checkLeadId(id) {
+export function checkLeadId(id) {
   if (!LEAD_ID.test(id)) {
     throw new AppError(400, 'INVALID_LEAD_ID', 'Lead ID must look like LD-1001')
   }
@@ -102,6 +111,7 @@ export async function createLead(input) {
     aiReason: null,
     aiModel: null,
     qualifiedAt: null,
+    reviewFlags: null, // set by the Validation Agent (Stage 5)
   }
   await store.insertLead(lead)
 
@@ -114,11 +124,12 @@ export async function createLead(input) {
     timestamp: now,
   })
 
-  // AI qualification runs in the BACKGROUND: the customer gets their answer now, and a
-  // slow or failing AI can never lose or delay the lead. (Does nothing if AI is disabled.)
-  qualification().start(lead.id)
+  // The agents run in the BACKGROUND (Orchestrator: validation → AI qualification → follow-up
+  // draft for Hot leads). The customer gets their answer now, and a slow or failing AI can
+  // never lose or delay the lead.
+  orchestrator().start(lead.id)
 
-  return lead
+  return withQualificationDefaults(lead) // same shape as GET (e.g. reviewFlags as an array)
 }
 
 /**

@@ -114,4 +114,6 @@ export const config = {
   // Give up on a Gemini request after this long (ms). AI calls always run in the background,
   // so this doesn't count against the frontend's 10s budget; it just stops a stuck call.
   aiTimeoutMs: 6_000,
+  // The business name used to sign follow-up drafts (Stage 5). A FICTIONAL demo name by default.
+  contractorName: (process.env.CONTRACTOR_NAME ?? '').trim() || 'LeadPilot Demo Contracting',
 }

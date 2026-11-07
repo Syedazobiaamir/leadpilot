@@ -54,7 +54,7 @@ describe('withQualificationDefaults (rows created before Stage 4)', () => {
   })
 
   it('never overrides real values', () => {
-    const real = { ...old, classification: 'Warm', qualificationStatus: 'qualified', aiModel: 'gemini-x', aiReason: 'r', qualifiedAt: 't' }
+    const real = { ...old, classification: 'Warm', qualificationStatus: 'qualified', aiModel: 'gemini-x', aiReason: 'r', qualifiedAt: 't', reviewFlags: ['too_vague'] }
     expect(withQualificationDefaults(real)).toEqual(real)
   })
 })

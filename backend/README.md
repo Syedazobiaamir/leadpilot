@@ -1,14 +1,16 @@
-# LeadPilot: Backend API (Stage 4)
+# LeadPilot: Backend API (Stage 5)
 
 Node.js + Express REST API for the AI Lead Management & Self-Healing Automation Platform.
 
-> **Stage 4 status:** data is stored in **Google Sheets** (persistent) or **in memory** (simulated sample
-> data, resets on restart). New leads are classified Hot/Warm/Cold by **Gemini AI** in the background when
-> `GEMINI_API_KEY` is set. n8n is not connected yet.
+> **Stage 5 status:** data is stored in **Google Sheets** (persistent) or **in memory** (simulated sample
+> data, resets on restart). For every new lead an **Orchestrator** runs the AI agents in the background:
+> Validation Agent (rules) → Qualification Agent (Gemini) → Follow-up Agent (email DRAFT for Hot leads,
+> approved by a person). Nothing is sent yet: n8n arrives in Stage 6.
 
 - Endpoint reference: [`docs/api-documentation.md`](../docs/api-documentation.md)
 - Google Sheets setup: [`docs/google-sheets-setup.md`](../docs/google-sheets-setup.md)
 - AI qualification design, evaluation and drills: [`docs/ai-qualification.md`](../docs/ai-qualification.md)
+- AI agents (permissions, Orchestrator, follow-ups, drills): [`docs/ai-agents.md`](../docs/ai-agents.md)
 
 ## Run it
 
@@ -33,6 +35,7 @@ Settings live in `backend/.env` (copy `.env.example`). `.env` is never committed
 | `GOOGLE_PRIVATE_KEY` | | Only for `sheets`. `private_key` from the JSON key, one line, in quotes. **Secret** |
 | `GEMINI_API_KEY` | (empty = AI off) | Key from Google AI Studio. **Secret.** Without it, leads stay `pending` and the server still runs. **Tests always have AI off.** |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Optional model override. `npm run ai:check` checks it |
+| `CONTRACTOR_NAME` | `LeadPilot Demo Contracting` (fictional) | Business name that signs AI follow-up drafts |
 
 With `DATA_STORE=sheets` and a missing or malformed Google setting, the server **refuses to start** and lists every problem.
 
@@ -46,6 +49,7 @@ With `DATA_STORE=sheets` and a missing or malformed Google setting, the server *
 | `npm run sheets:setup` | Create missing tabs and header rows, and add columns from newer versions to the end of the header. `-- --seed` adds SIMULATED sample data to empty tabs. Never deletes or overwrites |
 | `npm run ai:check` | Check the Gemini key, the model, and one real test classification (2 requests) |
 | `npm run ai:eval` | Run the AI evaluation set (~16 requests). Results go to `evals/last-run.json` |
+| `npm run ai:eval-followup` | Run the follow-up draft evaluation (~8 requests). Results go to `evals/followup-last-run.json` |
 
 ## How a request flows
 
@@ -62,7 +66,9 @@ request → requestId → requestLogger → express.json (10 KB limit)
 | `routes/` | Map URL + method to a controller |
 | `controllers/` | Read the request, call a service, send the response. No business rules |
 | `services/leadService.js`, `monitoringService.js` | Business rules |
-| `services/qualificationService.js` | AI qualification flow (background jobs, validation, audit events) |
+| `agents/` | Stage 5: tool registry + permissions, `runAgent` (AgentRuns records), Validation / Qualification / Follow-up agents, Orchestrator |
+| `services/qualificationService.js` | Runs the Qualification Agent (background jobs, retry endpoint) |
+| `services/followUpService.js` | Follow-up drafts: background requests + human approve / reject / edit |
 | `services/ai/geminiClient.js` | The only code that calls Gemini: plain `fetch`, key in a header, own deadline, `AiError` kinds |
 | `services/ai/qualificationPrompt.js` | Instructions, prompt (service + timeline + message only), response schema, Zod check, settings |
 | `evals/` | AI evaluation cases and results |

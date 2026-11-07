@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createSheetsStore } from '../services/stores/sheetsStore.js'
 import { createLogger } from '../utils/logger.js'
-import { headerFor } from '../services/stores/sheetsMapper.js'
+import { TABLES, headerFor } from '../services/stores/sheetsMapper.js'
 import { runStoreContract, contractSeed } from './storeContract.js'
 import { createFakeSheetsClient, fakeSpreadsheetFromSeed } from './fakeSheetsClient.js'
 
@@ -164,7 +164,7 @@ describe('sheets store: ping (readiness)', () => {
   it('passes when every tab has the right header, reading only header rows', async () => {
     const t = setup()
     expect(await t.store.ping()).toBe(true)
-    expect(t.client.calls.readHeaderRow).toBe(3)
+    expect(t.client.calls.readHeaderRow).toBe(Object.keys(TABLES).length) // one header read per tab
     expect(t.client.calls.readTab).toBe(0)
   })
 
@@ -185,7 +185,7 @@ describe('sheets store: ping (readiness)', () => {
     const t = setup()
     await t.store.ping()
     await t.store.ping()
-    expect(t.client.calls.readHeaderRow).toBe(6)
+    expect(t.client.calls.readHeaderRow).toBe(2 * Object.keys(TABLES).length) // 2 pings, one header read per tab each
   })
 })
 

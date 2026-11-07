@@ -13,17 +13,28 @@ export const contractSeed = {
       serviceType: 'Roofing', timeline: 'ASAP', message: 'Roof leak after storm.', source: 'Website form',
       classification: 'Hot', score: 90, status: 'New', createdAt: '2026-11-01T10:00:00.000Z',
       qualificationStatus: 'qualified', aiReason: 'Roof leak after storm.', aiModel: 'simulated', qualifiedAt: '2026-11-01T10:00:04.000Z',
+      reviewFlags: null,
     },
     {
       id: 'LD-2002', name: 'Ben Okafor', phone: '5125550102', email: 'ben@example.com', zip: '78701',
       serviceType: 'HVAC', timeline: '1-3 months', message: 'Heat pump quote.', source: 'Referral',
       classification: null, score: null, status: 'New', createdAt: '2026-11-02T10:00:00.000Z',
       qualificationStatus: 'pending', aiReason: null, aiModel: null, qualifiedAt: null,
+      reviewFlags: 'too_vague',
     },
   ],
   activity: [
     { id: 'EV-1', type: 'lead', message: 'New lead LD-2001 captured', leadId: 'LD-2001', timestamp: '2026-11-01T10:00:00.000Z' },
     { id: 'EV-2', type: 'error', message: 'Validation failed', leadId: null, timestamp: '2026-11-01T11:00:00.000Z' },
+  ],
+  followUps: [
+    {
+      id: 'FU-1', leadId: 'LD-2001', channel: 'email', subject: 'About your roof leak', body: 'Hi Ana, thanks for reaching out about the roof leak. Our team will call you to arrange an inspection.',
+      status: 'draft', aiModel: 'gemini-test', createdAt: '2026-11-01T10:00:06.000Z', decidedAt: null, editedAt: null,
+    },
+  ],
+  agentRuns: [
+    { runId: 'AR-1', leadId: 'LD-2001', agent: 'qualification', status: 'success', durationMs: 1200, errorKind: null, detail: 'Hot (score 90)', startedAt: '2026-11-01T10:00:02.000Z' },
   ],
   workflowRuns: [
     {
@@ -38,6 +49,7 @@ const newLead = {
   serviceType: 'Solar', timeline: 'Just researching', message: 'Solar panel costs?', source: 'Website form',
   classification: null, score: null, status: 'New', createdAt: '2026-11-03T10:00:00.000Z',
   qualificationStatus: 'pending', aiReason: null, aiModel: null, qualifiedAt: null,
+  reviewFlags: null,
 }
 
 /**
@@ -93,6 +105,27 @@ export function runStoreContract(name, makeStore) {
       const event = { id: 'EV-3', type: 'lead', message: 'New lead LD-2003 captured', leadId: 'LD-2003', timestamp: '2026-11-03T10:00:00.000Z' }
       await store.insertActivity(event)
       expect(await store.listActivity()).toContainEqual(event)
+    })
+
+    it('lists and inserts agent runs (numbers and nulls intact)', async () => {
+      expect(await store.listAgentRuns()).toEqual(contractSeed.agentRuns)
+      const run = { runId: 'AR-2', leadId: null, agent: 'validation', status: 'failed', durationMs: 3, errorKind: 'bug', detail: null, startedAt: '2026-11-03T10:00:00.000Z' }
+      await store.insertAgentRun(run)
+      const runs = await store.listAgentRuns()
+      expect(runs).toContainEqual(run)
+      expect(typeof runs.find((r) => r.runId === 'AR-2').durationMs).toBe('number')
+    })
+
+    it('lists, inserts and updates follow-up drafts', async () => {
+      expect(await store.listFollowUps()).toEqual(contractSeed.followUps)
+      const draft = { ...contractSeed.followUps[0], id: 'FU-2', subject: '=HYPERLINK("x")' }
+      await store.insertFollowUp(draft)
+      expect((await store.listFollowUps()).find((f) => f.id === 'FU-2').subject).toBe('=HYPERLINK("x")') // stays text
+
+      const approved = await store.updateFollowUp('FU-1', { status: 'approved', decidedAt: '2026-11-02T09:00:00.000Z', id: 'FU-HACK' })
+      expect(approved).toMatchObject({ id: 'FU-1', status: 'approved', decidedAt: '2026-11-02T09:00:00.000Z', body: contractSeed.followUps[0].body })
+      expect(await store.updateFollowUp('FU-404', { status: 'approved' })).toBeNull()
+      expect((await store.listFollowUps()).find((f) => f.id === 'FU-2').status).toBe('draft') // untouched
     })
 
     it('lists workflow runs with numbers intact', async () => {

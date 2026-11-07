@@ -1,5 +1,7 @@
 import LeadBadge from './LeadBadge.jsx'
 import AiQualification from './AiQualification.jsx'
+import ReviewFlags from './ReviewFlags.jsx'
+import FollowUpPanel from './FollowUpPanel.jsx'
 import { formatDateTime, formatPhone } from '../../utils/formatters.js'
 
 export default function LeadDetail({ lead, onClose, onRequalify }) {
@@ -44,7 +46,9 @@ export default function LeadDetail({ lead, onClose, onRequalify }) {
       <h3>Customer message</h3>
       <p className="lead-message">{lead.message}</p>
 
+      <ReviewFlags flags={lead.reviewFlags} />
       <AiQualification key={lead.id} lead={lead} onRequalify={onRequalify} />
+      <FollowUpPanel key={`followup-${lead.id}`} lead={lead} />
     </section>
   )
 }

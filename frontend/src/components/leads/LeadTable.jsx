@@ -1,5 +1,6 @@
 import LeadBadge from './LeadBadge.jsx'
 import { formatDateTime, formatPhone } from '../../utils/formatters.js'
+import { isBlockedLead } from '../../utils/reviewFlags.js'
 
 export default function LeadTable({ leads, selectedId, onSelect }) {
   if (leads.length === 0) {
@@ -28,6 +29,9 @@ export default function LeadTable({ leads, selectedId, onSelect }) {
                   {lead.name}
                 </button>
                 <span className="cell-sub muted">{formatPhone(lead.phone)}</span>
+                {lead.reviewFlags?.length > 0 && (
+                  <span className={`badge badge-flag-${isBlockedLead(lead.reviewFlags) ? 'block' : 'review'}`}>Needs review</span>
+                )}
               </td>
               <td>{lead.serviceType}</td>
               <td>

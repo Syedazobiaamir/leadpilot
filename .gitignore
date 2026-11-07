@@ -27,3 +27,4 @@ dist-ssr/
 
 # AI eval output that changes on every run (named copies like run-3-*.json ARE committed)
 backend/evals/last-run.json
+backend/evals/followup-last-run.json

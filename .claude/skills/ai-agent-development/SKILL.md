@@ -14,7 +14,18 @@ External-service rules (secrets, timeouts, error kinds, drills) are in the **api
 - **One client file** calls the model (`geminiClient.js`). Everything else uses `generateJson({ system, prompt, schema, ...settings })`.
 - **Settings live in one place** (`QUALIFICATION_SETTINGS`), so the app, `ai:check` and `ai:eval` always measure the same thing. For gemini-2.5 "thinking" models, thinking tokens count against `maxOutputTokens`. Set `thinkingBudget` (0 for short, rule-based tasks) or answers get cut off.
 - At most **one job per record** at a time (an in-flight map). Double clicks and simultaneous requests must not call the AI twice.
-- **Agents (Stage 5)**: each agent gets a narrow job and **no tools beyond what it needs**. No arbitrary code, no credential access, no destructive actions. Sensitive actions need human approval (`CLAUDE.md` §5).
+- **Agents (Stage 5)**: each agent gets a narrow job and **no tools beyond what it needs**. No arbitrary code, no credential access, no destructive actions. Sensitive actions need human approval (`CLAUDE.md` §5). Design and examples: `docs/ai-agents.md`.
+
+## Building an agent (Stage 5 pattern, `backend/agents/`)
+- Definition: `{ name, description, tools: ['readLead', ...], async run({ input, tools, logger }) }`. Return `{ summary, ... }`, or `{ status: 'skipped', summary }`. Throw on failure (an `AiError` keeps its `kind`).
+- **Data only through tools:** `await tools.call('toolName', ...)`. Never import the store in an agent. The registry refuses any tool not on the agent's list (`PermissionError` → run status `denied`).
+- **Every tool checks its own limits** (e.g. `updateLeadAiFields` refuses non-AI fields; `saveFollowUpDraft` only accepts new drafts). Never add tools that send, delete, run code or read credentials: the registry refuses such names, and keep it that way.
+- Run agents with `runAgent(...)`: it records AgentRuns (agent, lead, status, duration, errorKind, detail) and never throws. **`detail`/`summary` must never contain personal data**, and tests check it.
+- `registry.checkAgent(agent)` at startup, so a typo in a tool name fails fast.
+- The Orchestrator is **code, not an LLM**, and has **no tools**. It decides the order and when to stop (blocked lead → no AI; failed qualification → no follow-up). This keeps quota predictable (spam 0, Warm/Cold 1, Hot 2 requests).
+- **AI writes, people decide:** anything that would reach a customer is saved as a **draft**. Approve, reject and edit are human actions in a service, never agent tools. A decided item can't change (409). Nothing is sent before Stage 6.
+- When refactoring an AI flow into an agent, fingerprint the existing test file first and prove it passes **unchanged** afterwards.
+- Test each agent for: its exact tool list, a tampered `run` being `denied`, AgentRuns records (success / failed / skipped) without personal data, and the pipeline paths (Hot / Warm / blocked / AI failure / AI disabled). Customers must get `201` without waiting for the AI.
 
 ## Prompts
 - System instructions = role + explicit rubric + rules. User content goes in a separate `contents` part.
