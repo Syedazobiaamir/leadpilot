@@ -17,7 +17,13 @@ export const TABLES = {
       id: 'string', name: 'string', phone: 'string', email: 'string', zip: 'string',
       serviceType: 'string', timeline: 'string', message: 'string', source: 'string',
       classification: 'string?', score: 'number?', status: 'string', createdAt: 'string',
+      // Added in Stage 4 (AI qualification). Optional, because rows created before Stage 4 have
+      // these cells empty. leadService fills sensible defaults when reading them.
+      qualificationStatus: 'string?', aiReason: 'string?', aiModel: 'string?', qualifiedAt: 'string?',
     },
+    // Columns added after the tab was first created. `npm run sheets:setup` may add these
+    // to an existing tab (at the end of the header row) without touching any data.
+    addedLater: ['qualificationStatus', 'aiReason', 'aiModel', 'qualifiedAt'],
   },
   activity: {
     sheet: 'Activity',
@@ -78,10 +84,33 @@ function toCell(value, type, column) {
   return typeof value === 'number' ? value : String(value)
 }
 
-/** Object → row (array of cells) in the table's column order. */
+/**
+ * Object → row in the table's STANDARD column order.
+ * Only use this for a tab whose header is exactly headerFor(table), e.g. when the setup
+ * script creates a tab. For existing tabs, use toRowAt with the tab's real positions.
+ */
 export function toRow(table, record) {
   const { columns } = TABLES[table]
   return Object.entries(columns).map(([column, type]) => toCell(record[column], type, column))
+}
+
+/**
+ * Object → row, placing each value at the position its column has IN THIS SHEET.
+ * positions: from readHeader() (column name → index).
+ * baseRow:   the row's current cells (for an update). Cells of columns we don't know,
+ *            e.g. someone's own "notes" column, are KEPT, never wiped.
+ *
+ * (Stage 3 bug fixed in Stage 4: writes used the standard order, so after someone
+ * reordered the columns, values would have landed in the wrong columns.)
+ */
+export function toRowAt(table, record, positions, baseRow = []) {
+  const row = [...baseRow]
+  for (const [column, type] of Object.entries(TABLES[table].columns)) {
+    row[positions[column]] = toCell(record[column], type, column)
+  }
+  // Fill gaps (positions we skipped) with empty cells. A sparse array would become "null" in JSON.
+  for (let i = 0; i < row.length; i++) if (row[i] === undefined) row[i] = ''
+  return row
 }
 
 /**
@@ -117,7 +146,13 @@ export function fromRow(table, positions, row) {
  * Converts everything Google returned for one tab (header row first) into objects.
  * A broken row doesn't break the whole list: it's skipped and reported, so the
  * caller can log a warning and the app keeps working.
- * Returns { records, skipped: [{ row, reason }] }, where "row" is the spreadsheet row number.
+ * Returns {
+ *   records,                   the valid rows as objects
+ *   rowNumbers,                rowNumbers[i] = spreadsheet row of records[i] (needed for updates)
+ *   rawRows,                   rawRows[i] = the original cells of records[i] (to keep unknown columns on update)
+ *   positions,                 column name → index, from the header
+ *   skipped: [{ row, reason }] broken rows, by spreadsheet row number
+ * }
  */
 export function parseSheet(table, values = []) {
   if (values.length === 0) {
@@ -127,16 +162,20 @@ export function parseSheet(table, values = []) {
   const positions = readHeader(table, headerRow)
 
   const records = []
+  const rowNumbers = []
+  const rawRows = []
   const skipped = []
   rows.forEach((row, index) => {
     const rowNumber = index + 2 // +1 for the header, +1 because spreadsheet rows start at 1
     if (!row || row.every(isEmpty)) return // completely empty rows are simply ignored
     try {
       records.push(fromRow(table, positions, row))
+      rowNumbers.push(rowNumber)
+      rawRows.push(row)
     } catch (err) {
       if (!(err instanceof SheetFormatError)) throw err
       skipped.push({ row: rowNumber, reason: err.message })
     }
   })
-  return { records, skipped }
+  return { records, rowNumbers, rawRows, positions, skipped }
 }

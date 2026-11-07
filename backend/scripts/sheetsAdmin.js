@@ -28,6 +28,22 @@ export const FIX_HINTS = {
   unknown: 'Unexpected error. Check the settings in .env and try again.',
 }
 
+/** Our columns that are missing from a header row. */
+function missingColumns(table, headerRow = []) {
+  const names = new Set(headerRow.map((h) => String(h ?? '').trim()))
+  return headerFor(table).filter((column) => !names.has(column))
+}
+
+/**
+ * True if the only missing columns are ones added in a later stage (TABLES[table].addedLater).
+ * Then the tab is clearly OUR tab from an older version, and adding the columns is safe.
+ */
+function onlyNewColumnsMissing(table, headerRow) {
+  const missing = missingColumns(table, headerRow)
+  const addable = TABLES[table].addedLater ?? []
+  return missing.length > 0 && missing.every((column) => addable.includes(column))
+}
+
 function failureLine(err) {
   if (err instanceof StorageError) {
     return { reason: err.message, fix: FIX_HINTS[err.kind] ?? FIX_HINTS.unknown }
@@ -86,7 +102,13 @@ export async function checkSheets({ client, serviceAccountEmail, print = console
       }
     } catch (err) {
       fail(`Tab "${sheet}" cannot be used`, err)
-      if (!(err instanceof StorageError)) print(`      Fix:    Make row 1 of "${sheet}" exactly: ${headerFor(table).join(', ')}`)
+      if (err instanceof StorageError) continue
+      const header = (await client.readHeaderRow(sheet).catch(() => [])) ?? []
+      if (onlyNewColumnsMissing(table, header)) {
+        print(`      Fix:    This tab is from an older version. Run: npm run sheets:setup (adds the new columns, keeps all data)`)
+      } else {
+        print(`      Fix:    Make row 1 of "${sheet}" exactly: ${headerFor(table).join(', ')}`)
+      }
     }
   }
 
@@ -127,6 +149,19 @@ export async function setupSheets({ client, seed = false, print = console.log })
     try {
       readHeader(table, values[0])
     } catch (err) {
+      if (onlyNewColumnsMissing(table, values[0])) {
+        // MIGRATION: our tab from an older version. Add the new column names to the
+        // header, to the RIGHT of every used column (also right of any data under an
+        // unnamed column), so no existing cell is overwritten. Data rows are not touched:
+        // their new cells start empty, and leadService fills in defaults when reading.
+        const width = Math.max(...values.map((row) => row.length))
+        const newColumns = missingColumns(table, values[0])
+        const headerRow = [...values[0]]
+        while (headerRow.length < width) headerRow.push('')
+        await client.updateRow(sheet, 1, [...headerRow, ...newColumns])
+        print(`${sheet}: added new column(s) at the end: ${newColumns.join(', ')} (existing data not changed)`)
+        continue
+      }
       // Wrong header on a tab that has content: could be real data, so don't touch it.
       ok = false
       print(`${sheet}: NOT CHANGED. ${err.message}`)

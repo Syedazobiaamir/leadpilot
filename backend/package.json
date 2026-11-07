@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "smoke": "node scripts/smoke.js",
     "sheets:check": "node --env-file-if-exists=.env scripts/sheets.js check",
-    "sheets:setup": "node --env-file-if-exists=.env scripts/sheets.js setup"
+    "sheets:setup": "node --env-file-if-exists=.env scripts/sheets.js setup",
+    "ai:check": "node --env-file-if-exists=.env scripts/ai.js check",
+    "ai:eval": "node --env-file-if-exists=.env scripts/ai.js eval"
   },
   "engines": {
     "node": ">=22"

@@ -2,9 +2,9 @@
 export default function SimulatedBanner() {
   return (
     <div className="simulated-banner" role="note">
-      <strong>Demo mode:</strong> leads come from the API server (stored in Google Sheets or in memory,
-      depending on its setup) and start as simulated sample data. AI classifications and automation runs are
-      simulated. No AI or automation service is connected yet.
+      <strong>Demo mode:</strong> the sample leads are fictional, and their Hot/Warm/Cold labels are simulated
+      sample data (marked “Simulated”). New leads are classified by Gemini AI when the server has an AI key.
+      Automation runs are simulated. No automation service is connected yet.
     </div>
   )
 }

@@ -39,6 +39,7 @@ export function resetStore() {
 export const listLeads = () => store.listLeads()
 export const findLeadById = (id) => store.findLeadById(id)
 export const insertLead = (lead) => store.insertLead(lead)
+export const updateLead = (id, changes) => store.updateLead(id, changes)
 export const listActivity = () => store.listActivity()
 export const insertActivity = (event) => store.insertActivity(event)
 export const listWorkflowRuns = () => store.listWorkflowRuns()

@@ -147,6 +147,20 @@ export function createSheetsClient({ spreadsheetId, clientEmail, privateKey, tim
       )
     },
 
+    /**
+     * Overwrites ONE existing row, starting at column A. RAW, like appendRow.
+     * The caller must pass the FULL row (including cells of columns we don't know),
+     * otherwise those cells would be left as they were only if the row is shorter.
+     */
+    async updateRow(tab, rowNumber, row) {
+      await run(() =>
+        google.spreadsheets.values.update(
+          { spreadsheetId, range: `${quote(tab)}!A${rowNumber}`, valueInputOption: 'RAW', requestBody: { values: [row] } },
+          options,
+        ),
+      )
+    },
+
     /** Spreadsheet title and the names of its tabs. */
     async getInfo() {
       const res = await run(() =>

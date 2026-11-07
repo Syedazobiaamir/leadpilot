@@ -50,8 +50,9 @@ Every response has an `X-Request-Id` header. You can send your own, e.g. an n8n 
 ### `GET /api/health`
 **Liveness:** "the server process is running". Never touches storage, so it stays `200` even when Google Sheets is down.
 ```json
-200 { "status": "ok", "store": "sheets", "uptimeSeconds": 42, "timestamp": "2026-11-05T06:39:40.375Z" }
+200 { "status": "ok", "store": "sheets", "ai": "gemini-2.5-flash", "uptimeSeconds": 42, "timestamp": "2026-11-05T06:39:40.375Z" }
 ```
+`ai` is the **configured** model, or `"disabled"` when there is no `GEMINI_API_KEY`. It does not test the AI (that would cost quota): use `npm run ai:check` for that. AI is optional, so a broken AI never makes `/health` or `/ready` fail.
 
 ### `GET /api/health/ready`
 **Readiness:** "the server can do its job right now". Checks that storage is reachable and every tab has the right header row. It reads only the header rows and is never cached.
@@ -64,6 +65,23 @@ Every response has an `X-Request-Id` header. You can send your own, e.g. an n8n 
 | 503 | `STORAGE_UNAVAILABLE` | Google Sheets unreachable, too slow (8 s), credentials rejected, sheet not shared, tab missing, or header wrong. The exact reason is in the server log (`"msg":"storage error"`, field `kind`) |
 
 Monitoring (n8n, Stage 6) should alert when `/ready` fails, and restart the server only when `/health` fails.
+
+### The lead object
+| Field | Type | Set by | Meaning |
+|---|---|---|---|
+| `id` | string | system | `LD-1001`, … |
+| `name`, `phone`, `email`, `zip`, `serviceType`, `timeline`, `message` | string | customer | Validated input (see `POST /api/leads`) |
+| `source` | string | system | e.g. `Website form` |
+| `status` | string | system / staff | **Sales** status: `New`, `Contacted`, `Qualified`, `Won`, `Lost` |
+| `createdAt` | ISO date | system | When the lead was received |
+| `qualificationStatus` | string | AI flow | **AI** status: `pending` → `qualified` or `failed` |
+| `classification` | `Hot` \| `Warm` \| `Cold` \| null | AI | null until qualified |
+| `score` | integer 0–100 \| null | AI | Hot 70–100, Warm 40–69, Cold 0–39 |
+| `aiReason` | string \| null | AI | One-sentence explanation |
+| `aiModel` | string \| null | AI flow | The exact model version that classified the lead, or **`simulated`** for hand-written sample data |
+| `qualifiedAt` | ISO date \| null | AI flow | When the AI result was saved |
+
+A **failed re-qualification keeps the previous** `classification`, `score`, `aiReason` and `aiModel` (only `qualificationStatus` becomes `failed`). Leads created before Stage 4 have empty AI cells: they read as `qualified` + `simulated` if they have a classification (there was no AI before Stage 4), otherwise `pending`.
 
 ### `GET /api/leads`
 All leads, newest first.
@@ -118,11 +136,14 @@ Location: /api/leads/LD-1011
     "email": "tom.rivera@example.com", "zip": "78702", "serviceType": "Siding",
     "timeline": "Within 1 month", "message": "Need new siding on a two-story house.",
     "source": "Website form", "classification": null, "score": null,
-    "status": "New", "createdAt": "2026-11-04T09:21:06.725Z"
+    "status": "New", "createdAt": "2026-11-04T09:21:06.725Z",
+    "qualificationStatus": "pending", "aiReason": null, "aiModel": null, "qualifiedAt": null
   }
 }
 ```
 A successful create also writes an activity event (lead ID only, no personal data).
+
+**AI qualification runs in the background** after the lead is saved: the response never waits for the AI, and an AI failure never loses the lead. A few seconds later the lead becomes `qualified` (or `failed`). Poll `GET /api/leads/:id`. With AI disabled the lead stays `pending`.
 
 | Status | Code | When | Retry? |
 |---|---|---|---|
@@ -133,6 +154,23 @@ A successful create also writes an activity event (lead ID only, no personal dat
 | 413 | `PAYLOAD_TOO_LARGE` | Body over 10 KB | No |
 | 500 | `INTERNAL_ERROR` | Unexpected server error. Details are only in the server log, found by `requestId` | Yes, with backoff (Stage 7) |
 | 503 | `STORAGE_UNAVAILABLE` | Storage could not be read or written. **The lead may or may not have been saved** (see limitations) | Only after checking whether the lead exists (Stage 7) |
+
+### `POST /api/leads/:id/qualify`
+(Re)runs AI qualification for one lead, e.g. after a failure, or to replace a `simulated` classification. No request body.
+The lead is marked `pending` and the AI runs **in the background** (so this request stays well inside the frontend's 10 s budget). The result appears on the lead a few seconds later. Calling it again while it runs starts nothing new.
+```json
+202 Accepted
+{ "data": { "id": "LD-1005", "qualificationStatus": "pending", "classification": "Cold", ... } }
+```
+| Status | Code | When |
+|---|---|---|
+| 202 | | Started (or already running) |
+| 400 | `INVALID_LEAD_ID` | Malformed ID |
+| 404 | `LEAD_NOT_FOUND` | No lead with that ID |
+| 503 | `AI_UNAVAILABLE` | AI is not configured on this server (no `GEMINI_API_KEY`). Nothing changed |
+| 503 | `STORAGE_UNAVAILABLE` | Storage problem |
+
+Each AI run writes an activity event: `ai` (`LD-1005 classified as Cold (score 25) by gemini-2.5-flash`) or `error` (`AI qualification failed for LD-1005: … (temporary, can be retried)`). A suspected prompt injection adds an `error` event: `Possible prompt injection in LD-…`.
 
 ### `GET /api/activity`
 Activity and audit events, newest first. `type` is one of `lead`, `ai`, `automation`, `error`, `recovery` or `escalation`.
@@ -163,11 +201,16 @@ Automation workflow runs, newest first. **Simulated sample data** until n8n is c
 | `DUPLICATE_LEAD` | 409 | Yes | Lead already exists |
 | `PAYLOAD_TOO_LARGE` | 413 | Yes | Body too large |
 | `INTERNAL_ERROR` | 500 | No (may be temporary) | Unexpected server error |
+| `AI_UNAVAILABLE` | 503 | Depends | AI not configured (permanent until a key is added), or an AI run failed. The background failure reason is in the log and activity (`kind`: `timeout`, `rate_limited`, `quota_exhausted`, `unavailable`, `invalid_output` are temporary; `auth`, `api_disabled`, `permission`, `model_not_found`, `blocked`, `bad_request` need a human) |
 | `STORAGE_UNAVAILABLE` | 503 | No (often temporary) | Storage (Google Sheets) unreachable, slow or misconfigured. The log `kind` says which: `timeout`, `rate_limited`, `unavailable` (temporary) or `auth`, `api_disabled`, `permission`, `not_found`, `missing_tab`, `bad_format` (need a human) |
 
 "Permanent" means sending the same request again will fail the same way. Only non-permanent errors should ever be retried.
 
-## Known limitations (Stage 3)
+## Known limitations (Stage 4)
+- **AI free tier: 20 requests per day** for `gemini-2.5-flash` (verified from Google's own 429 response on 2026-11-05). After that, AI runs fail with `quota_exhausted` until the daily reset. Real use needs a paid tier (rotate the exposed key first).
+- AI results are not always right: see the measured accuracy in [`ai-qualification.md`](ai-qualification.md).
+- No automatic AI retries yet: a failed lead stays `failed` until someone clicks Retry (Stage 7).
+- If the server stops while an AI run is in progress, the lead stays `pending` (Stage 7 will find and retry such leads).
 - No authentication or rate limiting yet (Stage 8).
 - **Partial writes (Google Sheets):** creating a lead writes two rows, the lead and then its activity event. Sheets has no transactions. If the second write fails, the client gets `503`, but the lead **is saved**, so retrying the same request returns `409 DUPLICATE_LEAD`. A write that times out may also have been saved. Stage 7 adds idempotency keys and recovery for this.
 - **Duplicate race:** the duplicate check is check-then-insert. It held in memory (5 identical concurrent requests → 1 lead, 4 × `409`), but with Google Sheets two simultaneous identical requests could both pass. Stage 7 adds proper duplicate-request protection.

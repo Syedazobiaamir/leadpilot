@@ -62,6 +62,14 @@ export function createFakeSheetsClient(tabs = {}) {
       maybeFail()
       tab(name).push(structuredClone(row))
     },
+    /** Like values.update at A<rowNumber>: replaces that row's cells. */
+    async updateRow(name, rowNumber, row) {
+      calls.updateRow = (calls.updateRow ?? 0) + 1
+      maybeFail()
+      const target = tab(name)
+      while (target.length < rowNumber) target.push([])
+      target[rowNumber - 1] = structuredClone(row)
+    },
     async getInfo() {
       maybeFail()
       return { title: 'Fake LeadPilot Data', tabs: Object.keys(sheets) }

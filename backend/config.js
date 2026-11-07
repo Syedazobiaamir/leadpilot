@@ -63,6 +63,33 @@ export function readGoogleConfig(source = process.env) {
   return { spreadsheetId, clientEmail, privateKey }
 }
 
+/**
+ * Reads the Gemini (AI) settings. AI is OPTIONAL: without GEMINI_API_KEY it is simply
+ * disabled (returns null) and leads stay "pending". The server still runs.
+ * A key that is present but malformed is an error (better to fail now than on every lead).
+ * The key itself is never put in a message.
+ */
+export function readAiConfig(source = process.env) {
+  const apiKey = (source.GEMINI_API_KEY ?? '').trim().replace(/^["']|["']$/g, '')
+  if (!apiKey) return null
+
+  const problems = []
+  if (/\s/.test(apiKey) || apiKey.length < 20) {
+    problems.push('GEMINI_API_KEY does not look like an API key (copy it again from Google AI Studio, with no spaces)')
+  }
+  const model = (source.GEMINI_MODEL ?? '').trim() || DEFAULT_GEMINI_MODEL
+  if (!/^[a-z0-9][a-z0-9.-]*$/.test(model)) {
+    problems.push(`GEMINI_MODEL "${model}" is not a valid model name (example: ${DEFAULT_GEMINI_MODEL})`)
+  }
+  if (problems.length > 0) {
+    throw new Error(`Gemini AI is not configured correctly:\n  - ${problems.join('\n  - ')}`)
+  }
+  return { apiKey, model }
+}
+
+// Fast, low-cost model. Checked against the models your key can use with "npm run ai:check".
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'
+
 const env = process.env.NODE_ENV || 'development'
 const dataStore = readDataStore(process.env.DATA_STORE, env)
 
@@ -81,4 +108,10 @@ export const config = {
   // TIMEOUT BUDGET: must be SHORTER than the frontend's 10s timeout (frontend/src/services/leadService.js),
   // so the backend's clear 503 reaches the browser before the browser gives up on its own.
   sheetsTimeoutMs: 8_000,
+  // Gemini settings, or null when AI is disabled.
+  // SAFETY: automated tests ALWAYS have AI disabled, so a test can never call the real (paid/limited) API.
+  ai: env === 'test' ? null : readAiConfig(),
+  // Give up on a Gemini request after this long (ms). AI calls always run in the background,
+  // so this doesn't count against the frontend's 10s budget; it just stops a stuck call.
+  aiTimeoutMs: 6_000,
 }

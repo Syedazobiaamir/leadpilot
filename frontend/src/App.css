@@ -538,3 +538,31 @@ button:focus-visible {
     gap: 4px;
   }
 }
+
+/* ---------- AI qualification (Stage 4) ---------- */
+.badge-failed { background: var(--danger-bg); color: var(--danger); }
+.badge-simulated { background: var(--pending-bg); color: var(--pending); border: 1px dashed currentColor; }
+.badge-ai { background: var(--cold-bg); color: var(--cold); }
+
+.ai-box {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.ai-box h3 {
+  margin: 0;
+}
+
+.ai-box p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.ai-pending { color: var(--warm); }
+.ai-failed { color: var(--danger); }
+.ai-reason { font-style: italic; }

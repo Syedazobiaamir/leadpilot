@@ -31,7 +31,7 @@ export default function LeadTable({ leads, selectedId, onSelect }) {
               </td>
               <td>{lead.serviceType}</td>
               <td>
-                <LeadBadge classification={lead.classification} />
+                <LeadBadge classification={lead.classification} qualificationStatus={lead.qualificationStatus} />
               </td>
               <td>{lead.score ?? '—'}</td>
               <td>{lead.status}</td>

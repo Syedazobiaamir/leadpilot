@@ -76,6 +76,11 @@ async function request(path, { method = 'GET', body } = {}) {
   return data
 }
 
+// While a lead is being qualified by AI (in the background on the server), the app re-fetches
+// the leads every POLL ms, for at most WATCH ms. Faster in tests so they don't wait.
+export const QUALIFICATION_POLL_MS = import.meta.env.MODE === 'test' ? 30 : 3_000
+export const QUALIFICATION_WATCH_MS = import.meta.env.MODE === 'test' ? 300 : 60_000
+
 /** All leads, newest first (sorted by the server). */
 export async function getLeads() {
   return (await request('/leads')).data
@@ -89,6 +94,21 @@ export async function getActivity() {
 /** Workflow runs, newest first. */
 export async function getWorkflowRuns() {
   return (await request('/workflow-runs')).data
+}
+
+/**
+ * Asks the server to (re)qualify a lead with AI. The server answers 202 right away with the
+ * lead marked "pending"; the AI result appears on the lead a few seconds later.
+ * Returns { success: true, lead } or { success: false, code, error } (e.g. AI_UNAVAILABLE).
+ */
+export async function requalifyLead(id) {
+  try {
+    const body = await request(`/leads/${encodeURIComponent(id)}/qualify`, { method: 'POST' })
+    return { success: true, lead: body.data }
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err
+    return { success: false, code: err.code, error: err.message }
+  }
 }
 
 /**

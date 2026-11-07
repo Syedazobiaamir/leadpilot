@@ -143,3 +143,73 @@ describe('sheets:check', () => {
     expect(client.calls.appendRow).toBe(0)
   })
 })
+
+describe('sheets:setup migration (Stage 3 tab → Stage 4 columns)', () => {
+  const STAGE4_COLUMNS = ['qualificationStatus', 'aiReason', 'aiModel', 'qualifiedAt']
+  const stage3Header = headerFor('leads').filter((c) => !STAGE4_COLUMNS.includes(c))
+
+  /** A Leads tab exactly as Stage 3 created it, with 2 rows of data. */
+  function stage3Spreadsheet() {
+    const tabs = fakeSpreadsheetFromSeed(structuredClone(contractSeed))
+    tabs.Leads = [stage3Header, ...contractSeed.leads.map((lead) => stage3Header.map((c) => lead[c] ?? ''))]
+    return tabs
+  }
+
+  it('adds ONLY the new columns, at the end of the header, and keeps every data cell', async () => {
+    const client = createFakeSheetsClient(stage3Spreadsheet())
+    const dataBefore = structuredClone(client.sheets.Leads.slice(1))
+
+    const { ok, output } = await run(setupSheets, { client })
+
+    expect(ok).toBe(true)
+    expect(client.sheets.Leads[0]).toEqual([...stage3Header, ...STAGE4_COLUMNS])
+    expect(client.sheets.Leads.slice(1)).toEqual(dataBefore) // data rows untouched
+    expect(output).toMatch(/Leads: added new column\(s\) at the end: qualificationStatus, aiReason, aiModel, qualifiedAt/)
+  })
+
+  it('after migration the store reads the old rows (new fields empty → null)', async () => {
+    const client = createFakeSheetsClient(stage3Spreadsheet())
+    await run(setupSheets, { client })
+    const store = createSheetsStore({ client, cacheMs: 0, logger: createLogger({ level: 'silent' }) })
+    const ana = await store.findLeadById('LD-2001')
+    expect(ana).toMatchObject({ name: 'Ana Lopez', classification: 'Hot', qualificationStatus: null, aiModel: null })
+  })
+
+  it('never writes over data in an unnamed column: new columns go to its right', async () => {
+    const tabs = stage3Spreadsheet()
+    tabs.Leads[1].push('', 'someone typed this') // data 2 cells past the header's end
+    const client = createFakeSheetsClient(tabs)
+    await run(setupSheets, { client })
+
+    const header = client.sheets.Leads[0]
+    expect(client.sheets.Leads[1][stage3Header.length + 1]).toBe('someone typed this')
+    expect(header.indexOf('qualificationStatus')).toBe(stage3Header.length + 2)
+  })
+
+  it('running it again changes nothing', async () => {
+    const client = createFakeSheetsClient(stage3Spreadsheet())
+    await run(setupSheets, { client })
+    const after = structuredClone(client.sheets)
+    const { output } = await run(setupSheets, { client })
+    expect(client.sheets).toEqual(after)
+    expect(output).toMatch(/Leads: header OK \(2 row\(s\)\), nothing to do/)
+  })
+
+  it('sheets:check explains that an old-version tab needs sheets:setup', async () => {
+    const { ok, output } = await run(checkSheets, { client: createFakeSheetsClient(stage3Spreadsheet()) })
+    expect(ok).toBe(false)
+    expect(output).toMatch(/missing column\(s\): qualificationStatus, aiReason, aiModel, qualifiedAt/)
+    expect(output).toMatch(/older version\. Run: npm run sheets:setup/)
+  })
+
+  it('still refuses to touch a tab that is missing ORIGINAL columns', async () => {
+    const tabs = stage3Spreadsheet()
+    tabs.Leads[0] = tabs.Leads[0].filter((c) => c !== 'email') // an original column is gone too
+    const client = createFakeSheetsClient(tabs)
+    const before = structuredClone(client.sheets.Leads)
+    const { ok, output } = await run(setupSheets, { client })
+    expect(ok).toBe(false)
+    expect(client.sheets.Leads).toEqual(before)
+    expect(output).toMatch(/Leads: NOT CHANGED/)
+  })
+})

@@ -136,10 +136,14 @@ describe('parseSheet', () => {
 
     expect(records).toEqual([lead, unclassified])
     expect(skipped).toEqual([{ row: 5, reason: '"score" is not a number ("high")' }])
+    // Row numbers of the VALID records (needed for updates): rows 2 and 6
+    expect(parseSheet('leads', values).rowNumbers).toEqual([2, 6])
   })
 
   it('returns an empty list for a sheet with only a header', () => {
-    expect(parseSheet('activity', [headerFor('activity')])).toEqual({ records: [], skipped: [] })
+    const result = parseSheet('activity', [headerFor('activity')])
+    expect(result.records).toEqual([])
+    expect(result.skipped).toEqual([])
   })
 
   it('fails clearly when the tab has no header row at all', () => {

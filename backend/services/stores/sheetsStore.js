@@ -8,7 +8,7 @@
 // - A row someone broke by hand is skipped and logged. It never takes down the whole list.
 // - ANY storage failure becomes a 503 STORAGE_UNAVAILABLE for the client, while the log
 //   gets the exact reason (kind). Never a crash, never a fake success.
-import { TABLES, SheetFormatError, headerFor, parseSheet, readHeader, toRow } from './sheetsMapper.js'
+import { TABLES, SheetFormatError, headerFor, parseSheet, readHeader, toRowAt } from './sheetsMapper.js'
 import { StorageError } from './sheetsClient.js'
 import { AppError } from '../../utils/AppError.js'
 import { logger as defaultLogger } from '../../utils/logger.js'
@@ -67,9 +67,12 @@ export function createSheetsStore({ client, cacheMs = 10_000, logger = defaultLo
   }
 
   async function append(table, record) {
-    const row = toRow(table, record) // throws SheetFormatError only if our own code passes bad data (a bug)
+    const { sheet } = TABLES[table]
     try {
-      await client.appendRow(TABLES[table].sheet, row)
+      // Read the header first, so every value goes into the right column even if
+      // someone reordered the columns or added their own.
+      const positions = readHeader(table, await client.readHeaderRow(sheet))
+      await client.appendRow(sheet, toRowAt(table, record, positions))
     } catch (err) {
       throw toAppError(err, 'write', table)
     } finally {
@@ -80,6 +83,28 @@ export function createSheetsStore({ client, cacheMs = 10_000, logger = defaultLo
     return structuredClone(record)
   }
 
+  /**
+   * Changes some fields of one lead. Returns the updated lead, or null if the ID doesn't exist.
+   * Reads the tab FRESH (not from the cache) to find the row: with a stale cache, a row
+   * deleted by hand in the last few seconds would make us overwrite the WRONG lead.
+   * Cells of columns we don't know (e.g. "notes") are kept.
+   */
+  async function updateLead(id, changes) {
+    const { sheet } = TABLES.leads
+    try {
+      const { records, rowNumbers, rawRows, positions } = parseSheet('leads', await client.readTab(sheet))
+      const index = records.findIndex((lead) => lead.id === id)
+      if (index === -1) return null
+      const updated = { ...records[index], ...changes, id } // the ID itself can never be changed
+      await client.updateRow(sheet, rowNumbers[index], toRowAt('leads', updated, positions, rawRows[index]))
+      return structuredClone(updated)
+    } catch (err) {
+      throw toAppError(err, 'update', 'leads')
+    } finally {
+      delete cache.leads
+    }
+  }
+
   return {
     name: 'sheets',
 
@@ -88,6 +113,7 @@ export function createSheetsStore({ client, cacheMs = 10_000, logger = defaultLo
       return (await read('leads')).find((lead) => lead.id === id) ?? null
     },
     insertLead: (lead) => append('leads', lead),
+    updateLead,
     listActivity: () => read('activity'),
     insertActivity: (event) => append('activity', event),
     listWorkflowRuns: () => read('workflowRuns'),

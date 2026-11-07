@@ -296,18 +296,24 @@ Use realistic sample data and clearly identify simulated features.
 - **Stage 1 (React frontend): complete.** Dashboard, lead form, lead table, monitoring and activity log, all verified.
 - **Stage 2 (Node.js + Express backend): complete.** REST API with validation, duplicate protection, structured logging and a consistent error format. The frontend calls the API through the Vite proxy. Verified by backend tests, frontend tests, `npm run smoke`, and a manual check by the developer.
 - **Stage 3 (Google Sheets database integration): complete.** A swappable store (`DATA_STORE=memory|sheets`) with a shared contract, a Sheets store (RAW writes, 10 s cache, our own 8 s deadline, every failure → `503 STORAGE_UNAVAILABLE`), `/api/health/ready`, and `sheets:check` / `sheets:setup` scripts. Verified live against the developer's real sheet (smoke 24/24, data survives restart) and by failure drills (which found and fixed a missing-deadline bug).
-- **Next: Stage 4 (Gemini AI lead qualification).** Not started. Propose a plan first.
+- **Stage 4 (Gemini AI lead qualification): complete.** Save first, AI in the background (`POST /api/leads` → 201, then `qualificationService`); plain-fetch `geminiClient` (key in header, own deadline, `AiError` kinds incl. `quota_exhausted` vs `rate_limited`); AI gets only service + timeline + message; Zod-validated structured output; prompt-injection defence; `POST /api/leads/:id/qualify` (202); frontend AI panel (Gemini vs Simulated, Retry, auto-refresh). Verified: eval run 3 (2026-11-07) **16/16, 3/3 injections resisted and flagged, 0 false alarms** (`backend/evals/run-3-thinking-off.json`; run 1 before the thinking fix: `run-1-thinking-on.json`), 6 AI failure drills, and a real quota failure. Design and limits: `docs/ai-qualification.md`.
+- **Next: Stage 5 (AI agent architecture). Plan approved 2026-11-07: 1A** code-driven Orchestrator (validate → qualify → draft), **2A** follow-up drafts automatic for Hot leads, on demand for others, **3A** rule-based Validation Agent (no AI), **4A** follow-up AI gets the first name only. Agents use a permissioned tool registry (no send/delete/credential tools). Follow-ups are DRAFTS that need human approval (nothing is sent until Stage 6). New Sheet tabs: FollowUps, AgentRuns. Recovery Agent is Stage 7.
 
 Still true at this point:
 - The developer's `backend/.env` has `DATA_STORE=sheets` and is connected to their Google Sheet (service account `id-leadpilot-sheets@step-1-done.iam.gserviceaccount.com`). Tests always use memory.
-- Gemini, n8n and Slack are NOT connected. Don't connect any integration without checking credentials and getting approval. Follow the `api-integration` skill.
+- Gemini IS connected: `GEMINI_API_KEY` is in `backend/.env` (model `gemini-2.5-flash`, free tier = 20 requests/day; `npm run ai:check` passes). n8n and Slack are NOT connected. Don't connect any integration without checking credentials and getting approval. Follow the `api-integration` and `ai-agent-development` skills.
 - Known Stage 7 items: partial writes (a lead saved but its activity write failed → client sees 503), the duplicate check-then-insert race, no retries yet.
 - The lead schema exists in two identical copies (frontend + backend). Edit both. A test enforces this.
-- Docs: `docs/api-documentation.md`, `docs/google-sheets-setup.md`, `backend/README.md`, `frontend/README.md`. Skills: `frontend-design`, `api-development`, `api-integration`, `testing-qa`.
+- Docs: `docs/api-documentation.md`, `docs/google-sheets-setup.md`, `backend/README.md`, `frontend/README.md`. Skills: `frontend-design`, `api-development`, `api-integration`, `ai-agent-development`, `testing-qa`. AI design and eval: `docs/ai-qualification.md`.
 
 ⚠️ **Open security TODO: rotate the Google service account key.** The current key (ID starting `45ee26ba6d64`)
 was pasted into a chat on 2026-11-05. The developer chose to keep it temporarily while the sheet holds only
 SIMULATED sample data. Before any real customer data is stored, and before deployment (Stage 9): delete that key in
 Google Cloud (IAM & Admin → Service Accounts → KEYS), create a new one, update `backend/.env`, and remove this note.
+
+⚠️ **Open security TODO: rotate the Gemini API key.** The current `GEMINI_API_KEY` (starts with `AQ.`) was also
+pasted into a chat on 2026-11-05, and the developer chose to keep it for now. Anyone with it can use the AI quota
+(and spend money if billing is ever enabled). Rotate it before enabling billing, before real customer data, and
+before deployment: Google AI Studio → API keys → delete it → create a new one → update `backend/.env` → remove this note.
 
 Wait for my approval before making major architectural changes.

@@ -1,7 +1,8 @@
+// TEST FIXTURE: a copy of backend/data/sampleLeads.js (used by src/test/fakeApi.js).
 // SIMULATED DATA. This is not from real customers.
 // Phone numbers use the fictional 555-01xx range and emails use example.com.
-// The "classification" and "score" values are hand-written to look like AI output.
-// Real AI qualification arrives in Stage 4.
+// classification, score and aiReason are HAND-WRITTEN to look like AI output, and are
+// labelled aiModel: 'simulated'. Real AI qualification (Gemini) is added in Stage 4.
 
 export const sampleLeads = [
   {
@@ -18,6 +19,10 @@ export const sampleLeads = [
     score: 92,
     status: 'Contacted',
     createdAt: '2026-11-03T14:05:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: active roof leak after a storm, wants an inspection this week.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-11-03T14:05:04Z',
   },
   {
     id: 'LD-1002',
@@ -33,6 +38,10 @@ export const sampleLeads = [
     score: 88,
     status: 'Qualified',
     createdAt: '2026-11-03T11:42:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: AC failed in hot weather, ready for a replacement quote now.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-11-03T11:42:04Z',
   },
   {
     id: 'LD-1003',
@@ -48,6 +57,10 @@ export const sampleLeads = [
     score: 71,
     status: 'New',
     createdAt: '2026-11-02T19:20:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: clear kitchen remodel plan and budget, 1-3 month timeline.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-11-02T19:20:04Z',
   },
   {
     id: 'LD-1004',
@@ -63,6 +76,10 @@ export const sampleLeads = [
     score: 84,
     status: 'Won',
     createdAt: '2026-10-30T16:10:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: wants 12 windows replaced before winter, specific scope.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-10-30T16:10:04Z',
   },
   {
     id: 'LD-1005',
@@ -78,6 +95,10 @@ export const sampleLeads = [
     score: 28,
     status: 'Contacted',
     createdAt: '2026-10-29T09:33:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: only researching solar costs, not ready to commit.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-10-29T09:33:04Z',
   },
   {
     id: 'LD-1006',
@@ -93,6 +114,10 @@ export const sampleLeads = [
     score: 90,
     status: 'Won',
     createdAt: '2026-10-28T08:15:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: leaking water heater needs replacing soon.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-10-28T08:15:04Z',
   },
   {
     id: 'LD-1007',
@@ -108,6 +133,10 @@ export const sampleLeads = [
     score: 66,
     status: 'Qualified',
     createdAt: '2026-10-27T13:48:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: defined bathroom project, wants a design consultation.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-10-27T13:48:04Z',
   },
   {
     id: 'LD-1008',
@@ -123,6 +152,10 @@ export const sampleLeads = [
     score: 31,
     status: 'Lost',
     createdAt: '2026-10-25T17:02:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: vague interest in siding next year, price shopping.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-10-25T17:02:04Z',
   },
   {
     id: 'LD-1009',
@@ -138,6 +171,10 @@ export const sampleLeads = [
     score: 74,
     status: 'Contacted',
     createdAt: '2026-10-24T10:27:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: old roof, selling in spring, needs a quote within a month.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-10-24T10:27:04Z',
   },
   {
     id: 'LD-1010',
@@ -153,5 +190,9 @@ export const sampleLeads = [
     score: 58,
     status: 'New',
     createdAt: '2026-10-22T15:55:00Z',
+    qualificationStatus: 'qualified',
+    aiReason: 'Simulated: considering a heat pump, still comparing costs and rebates.',
+    aiModel: 'simulated',
+    qualifiedAt: '2026-10-22T15:55:04Z',
   },
 ]

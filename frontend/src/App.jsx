@@ -28,7 +28,7 @@ export default function App() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [selectedLeadId, setSelectedLeadId] = useState(null)
 
-  const { leads, loading: leadsLoading, error: leadsError, addLead, reload: reloadLeads } = useLeads()
+  const { leads, loading: leadsLoading, error: leadsError, addLead, requalify, reload: reloadLeads } = useLeads()
   const {
     activity,
     workflowRuns,
@@ -90,7 +90,7 @@ export default function App() {
             </p>
             <div className={selectedLead ? 'split' : ''}>
               <LeadTable leads={visibleLeads} selectedId={selectedLeadId} onSelect={setSelectedLeadId} />
-              <LeadDetail lead={selectedLead} onClose={() => setSelectedLeadId(null)} />
+              <LeadDetail lead={selectedLead} onClose={() => setSelectedLeadId(null)} onRequalify={requalify} />
             </div>
           </>
         )

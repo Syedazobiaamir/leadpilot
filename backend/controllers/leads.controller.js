@@ -15,6 +15,12 @@ export async function createLead(req, res) {
   res.status(201).location(`/api/leads/${lead.id}`).json({ data: lead })
 }
 
+export async function qualifyLead(req, res) {
+  const lead = await leadService.requalifyLead(req.params.id)
+  // 202 Accepted: "we started the work". The result appears on the lead in a few seconds.
+  res.status(202).json({ data: lead })
+}
+
 export async function getLead(req, res) {
   const lead = await leadService.getLeadById(req.params.id)
   res.json({ data: lead })

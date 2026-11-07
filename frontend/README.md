@@ -2,7 +2,8 @@
 
 The React dashboard for the AI Lead Management & Self-Healing Automation Platform.
 
-> **Stage 3 status:** the UI loads and saves data through the Express API (`backend/`).
+> **Stage 4 status:** the UI loads and saves data through the Express API (`backend/`), and shows the
+> **Gemini AI** qualification of each lead (or clearly marks it **Simulated** for sample data).
 > The backend stores it in **Google Sheets** (persistent) or **in memory** (resets on restart), depending on
 > `DATA_STORE` in `backend/.env`. The data starts as **simulated sample data**.
 > No AI (Gemini), database (Google Sheets) or automation (n8n) is connected yet.
@@ -45,7 +46,9 @@ The browser only talks to port 5173, so no CORS setup is needed.
 | Lead table with search, classification and status filters | Working |
 | Lead detail panel | Working |
 | Clear errors when the server is down, slow (10s timeout) or failing, with a *Try again* button | Working |
-| Hot/Warm/Cold classification | **Simulated.** The values are hand-written. Gemini arrives in Stage 4 |
+| Hot/Warm/Cold classification | **Gemini AI** for new leads (when the server has a key). Sample leads are marked **Simulated** |
+| AI qualification panel (lead detail) | Shows the AI reason, the source (Gemini model + time, or Simulated), "analyzing" while pending, and *Qualify with AI* / *Re-run AI* / *Retry AI*. A failed re-run keeps and shows the previous result |
+| Automatic refresh while AI works | The list re-fetches every 3 s while a lead is pending, and stops when the result arrives or after 60 s |
 | Automation monitoring (success / retrying / failed / escalated) | **Simulated** runs. n8n arrives in Stage 6 |
 | Activity & audit log | Sample events, plus real events for leads you create |
 
@@ -97,3 +100,6 @@ Start both servers first.
 10. **Automation** → failed or escalated runs show their last error. The activity log includes your new lead.
 11. Narrow the browser window (or use phone view in DevTools) → the layout stacks and nothing overflows.
 12. Stop the backend and refresh → "Could not reach the server" with *Try again*. Start it again and click *Try again* → the data is back (with `DATA_STORE=sheets` your new lead is still there; with `memory` it is gone).
+13. **AI** (needs `GEMINI_API_KEY` and free quota): create a lead with an urgent message → table shows *Pending*, then within a few seconds *Hot* (no refresh needed). Open it → *Gemini AI* + model + reason.
+14. Open a sample lead (e.g. Maria Gonzalez) → AI panel shows *Simulated*, "not a real AI result", and *Qualify with AI*.
+15. With AI off or quota used up, *Qualify with AI* → a clear message, or *AI failed* + *Retry AI*. A lead that had a result keeps showing it.

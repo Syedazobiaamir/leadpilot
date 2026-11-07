@@ -188,3 +188,71 @@ describe('sheets store: ping (readiness)', () => {
     expect(t.client.calls.readHeaderRow).toBe(6)
   })
 })
+
+describe('sheets store: writes respect the sheet\'s real column layout (Stage 3 bug, fixed in Stage 4)', () => {
+  /** A Leads tab where someone REORDERED the columns and ADDED their own "notes" column. */
+  function reorderedSetup() {
+    const header = [...headerFor('leads')].reverse()
+    header.splice(3, 0, 'notes') // a custom column in the middle
+    const rowFor = (lead, note) => header.map((h) => (h === 'notes' ? note : lead[h] ?? ''))
+    const tabs = fakeSpreadsheetFromSeed(structuredClone(contractSeed))
+    tabs.Leads = [header, rowFor(contractSeed.leads[0], 'VIP customer'), rowFor(contractSeed.leads[1], 'call after 5pm')]
+    const client = createFakeSheetsClient(tabs)
+    const store = createSheetsStore({ client, cacheMs: 10_000, logger: createLogger({ level: 'silent' }) })
+    const cell = (rowIndex, column) => client.sheets.Leads[rowIndex][header.indexOf(column)]
+    return { client, store, cell }
+  }
+
+  it('reads correctly from reordered columns', async () => {
+    const { store } = reorderedSetup()
+    expect(await store.findLeadById('LD-2001')).toEqual(contractSeed.leads[0])
+  })
+
+  it('insert puts every value in its own column', async () => {
+    const { store, cell } = reorderedSetup()
+    await store.insertLead(newLead)
+    expect(cell(3, 'id')).toBe('LD-2100')
+    expect(cell(3, 'email')).toBe('new@example.com')
+    expect(cell(3, 'phone')).toBe('5125550199')
+    expect(cell(3, 'notes')).toBe('') // our insert leaves the custom column empty
+    expect(await store.findLeadById('LD-2100')).toEqual(newLead)
+  })
+
+  it('update changes our columns and KEEPS the custom "notes" cell', async () => {
+    const { store, cell } = reorderedSetup()
+    await store.updateLead('LD-2002', { classification: 'Warm', score: 70 })
+    expect(cell(2, 'classification')).toBe('Warm')
+    expect(cell(2, 'score')).toBe(70)
+    expect(cell(2, 'notes')).toBe('call after 5pm')
+    expect(cell(1, 'notes')).toBe('VIP customer') // the other row is untouched
+  })
+})
+
+describe('sheets store: updateLead safety', () => {
+  it('finds the row with a FRESH read, never from a stale cache', async () => {
+    const t = setup()
+    await t.store.listLeads() // cache now holds the old layout
+    // Someone deletes row 2 (LD-2001) by hand: LD-2002 moves up to row 2
+    t.client.sheets.Leads.splice(1, 1)
+    await t.store.updateLead('LD-2002', { score: 55 })
+
+    expect(t.client.sheets.Leads).toHaveLength(2) // header + LD-2002 only
+    expect(t.client.sheets.Leads[1][0]).toBe('LD-2002')
+    t.clock.advance(10_001)
+    expect((await t.store.findLeadById('LD-2002')).score).toBe(55)
+  })
+
+  it('clears the cache after an update', async () => {
+    const t = setup()
+    await t.store.listLeads()
+    await t.store.updateLead('LD-2002', { score: 55 })
+    expect((await t.store.findLeadById('LD-2002')).score).toBe(55) // no clock advance needed
+  })
+
+  it('a failed update → 503, logged as action "update"', async () => {
+    const t = setup()
+    t.client.failNext('timeout', { temporary: true })
+    await expect(t.store.updateLead('LD-2002', { score: 55 })).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' })
+    expect(t.lines).toContainEqual(expect.objectContaining({ action: 'update', kind: 'timeout' }))
+  })
+})

@@ -7,6 +7,7 @@
 //                          If this fails, the server is fine but something it depends on isn't.
 import { Router } from 'express'
 import { pingStore, storeName } from '../services/leadStore.js'
+import { qualification } from '../services/qualificationService.js'
 
 const router = Router()
 
@@ -14,6 +15,7 @@ router.get('/', (req, res) => {
   res.json({
     status: 'ok',
     store: storeName,
+    ai: qualification().model ?? 'disabled', // AI is optional: "disabled" does not make the server unhealthy
     uptimeSeconds: Math.round(process.uptime()), // how long the server has been running
     timestamp: new Date().toISOString(),
   })

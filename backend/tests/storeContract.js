@@ -12,11 +12,13 @@ export const contractSeed = {
       id: 'LD-2001', name: 'Ana Lopez', phone: '5125550101', email: 'ana@example.com', zip: '02134',
       serviceType: 'Roofing', timeline: 'ASAP', message: 'Roof leak after storm.', source: 'Website form',
       classification: 'Hot', score: 90, status: 'New', createdAt: '2026-11-01T10:00:00.000Z',
+      qualificationStatus: 'qualified', aiReason: 'Roof leak after storm.', aiModel: 'simulated', qualifiedAt: '2026-11-01T10:00:04.000Z',
     },
     {
       id: 'LD-2002', name: 'Ben Okafor', phone: '5125550102', email: 'ben@example.com', zip: '78701',
       serviceType: 'HVAC', timeline: '1-3 months', message: 'Heat pump quote.', source: 'Referral',
       classification: null, score: null, status: 'New', createdAt: '2026-11-02T10:00:00.000Z',
+      qualificationStatus: 'pending', aiReason: null, aiModel: null, qualifiedAt: null,
     },
   ],
   activity: [
@@ -35,6 +37,7 @@ const newLead = {
   id: 'LD-2003', name: 'Cara Diaz', phone: '+1 512-555-0103', email: 'cara@example.com', zip: '78702',
   serviceType: 'Solar', timeline: 'Just researching', message: 'Solar panel costs?', source: 'Website form',
   classification: null, score: null, status: 'New', createdAt: '2026-11-03T10:00:00.000Z',
+  qualificationStatus: 'pending', aiReason: null, aiModel: null, qualifiedAt: null,
 }
 
 /**
@@ -106,6 +109,34 @@ export function runStoreContract(name, makeStore) {
       const again = await store.findLeadById(leads[0].id)
       expect(again.name).not.toBe('CHANGED')
       expect(again.status).not.toBe('CHANGED')
+    })
+
+    it('updateLead changes only the given fields and returns the updated lead', async () => {
+      const changes = { classification: 'Warm', score: 64, qualificationStatus: 'qualified', aiReason: 'Wants a heat pump quote.', aiModel: 'test-model', qualifiedAt: '2026-11-05T10:00:00.000Z' }
+      const updated = await store.updateLead('LD-2002', changes)
+
+      expect(updated).toEqual({ ...contractSeed.leads[1], ...changes })
+      expect(await store.findLeadById('LD-2002')).toEqual(updated)
+      // Other leads are untouched
+      expect(await store.findLeadById('LD-2001')).toEqual(contractSeed.leads[0])
+      expect(await store.listLeads()).toHaveLength(2)
+    })
+
+    it('updateLead returns null for an unknown ID and changes nothing', async () => {
+      expect(await store.updateLead('LD-9999', { score: 1 })).toBeNull()
+      expect(await store.listLeads()).toEqual(expect.arrayContaining(contractSeed.leads))
+    })
+
+    it('updateLead can never change a lead ID', async () => {
+      const updated = await store.updateLead('LD-2002', { id: 'LD-7777', score: 10 })
+      expect(updated.id).toBe('LD-2002')
+      expect(await store.findLeadById('LD-7777')).toBeNull()
+    })
+
+    it('updateLead can set a field back to null', async () => {
+      await store.updateLead('LD-2001', { aiReason: null, classification: null, score: null })
+      const lead = await store.findLeadById('LD-2001')
+      expect(lead).toMatchObject({ aiReason: null, classification: null, score: null, name: 'Ana Lopez' })
     })
 
     it('keeps a copy on insert: changing the input afterwards does not change the store', async () => {

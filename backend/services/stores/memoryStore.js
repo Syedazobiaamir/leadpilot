@@ -38,6 +38,13 @@ export function createMemoryStore(seed) {
       leads.push(structuredClone(lead))
       return structuredClone(lead)
     },
+    /** Changes some fields of one lead. Returns the updated lead, or null if the ID doesn't exist. */
+    async updateLead(id, changes) {
+      const index = leads.findIndex((l) => l.id === id)
+      if (index === -1) return null
+      leads[index] = { ...leads[index], ...structuredClone(changes), id } // the ID itself can never be changed
+      return structuredClone(leads[index])
+    },
     async listActivity() {
       return structuredClone(activity)
     },

@@ -1,12 +1,14 @@
-# LeadPilot: Backend API (Stage 3)
+# LeadPilot: Backend API (Stage 4)
 
 Node.js + Express REST API for the AI Lead Management & Self-Healing Automation Platform.
 
-> **Stage 3 status:** data can be stored in **Google Sheets** (persistent) or **in memory** (simulated
-> sample data, resets on restart). Gemini and n8n are not connected yet.
+> **Stage 4 status:** data is stored in **Google Sheets** (persistent) or **in memory** (simulated sample
+> data, resets on restart). New leads are classified Hot/Warm/Cold by **Gemini AI** in the background when
+> `GEMINI_API_KEY` is set. n8n is not connected yet.
 
 - Endpoint reference: [`docs/api-documentation.md`](../docs/api-documentation.md)
 - Google Sheets setup: [`docs/google-sheets-setup.md`](../docs/google-sheets-setup.md)
+- AI qualification design, evaluation and drills: [`docs/ai-qualification.md`](../docs/ai-qualification.md)
 
 ## Run it
 
@@ -29,6 +31,8 @@ Settings live in `backend/.env` (copy `.env.example`). `.env` is never committed
 | `GOOGLE_SHEETS_SPREADSHEET_ID` | | Only for `sheets`. The ID from the sheet URL (the whole URL also works) |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | | Only for `sheets`. `client_email` from the JSON key |
 | `GOOGLE_PRIVATE_KEY` | | Only for `sheets`. `private_key` from the JSON key, one line, in quotes. **Secret** |
+| `GEMINI_API_KEY` | (empty = AI off) | Key from Google AI Studio. **Secret.** Without it, leads stay `pending` and the server still runs. **Tests always have AI off.** |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Optional model override. `npm run ai:check` checks it |
 
 With `DATA_STORE=sheets` and a missing or malformed Google setting, the server **refuses to start** and lists every problem.
 
@@ -39,7 +43,9 @@ With `DATA_STORE=sheets` and a missing or malformed Google setting, the server *
 | `npm test` | Run all tests (no network, no Google account needed) |
 | `npm run smoke` | End-to-end check against the running app (see below) |
 | `npm run sheets:check` | Diagnose the Google Sheets connection step by step. **Read-only** |
-| `npm run sheets:setup` | Create missing tabs and header rows. `-- --seed` adds SIMULATED sample data to empty tabs. Never deletes or overwrites |
+| `npm run sheets:setup` | Create missing tabs and header rows, and add columns from newer versions to the end of the header. `-- --seed` adds SIMULATED sample data to empty tabs. Never deletes or overwrites |
+| `npm run ai:check` | Check the Gemini key, the model, and one real test classification (2 requests) |
+| `npm run ai:eval` | Run the AI evaluation set (~16 requests). Results go to `evals/last-run.json` |
 
 ## How a request flows
 
@@ -56,6 +62,10 @@ request → requestId → requestLogger → express.json (10 KB limit)
 | `routes/` | Map URL + method to a controller |
 | `controllers/` | Read the request, call a service, send the response. No business rules |
 | `services/leadService.js`, `monitoringService.js` | Business rules |
+| `services/qualificationService.js` | AI qualification flow (background jobs, validation, audit events) |
+| `services/ai/geminiClient.js` | The only code that calls Gemini: plain `fetch`, key in a header, own deadline, `AiError` kinds |
+| `services/ai/qualificationPrompt.js` | Instructions, prompt (service + timeline + message only), response schema, Zod check, settings |
+| `evals/` | AI evaluation cases and results |
 | `services/leadStore.js` | Picks the store from `DATA_STORE`. The services only ever talk to this |
 | `services/stores/memoryStore.js` | In-memory store |
 | `services/stores/sheetsStore.js` | Google Sheets store: cache, broken-row handling, every failure → `503` |
@@ -99,6 +109,7 @@ It checks 23 behaviours (24 through the proxy, including the app page) and exits
 ⚠ Each run **creates one test lead** (named "Smoke Test"). With `DATA_STORE=sheets` that lead is written to the real spreadsheet. Only use it on demo data, and delete the row afterwards if you like.
 
 ## Known limitations
+- **AI:** the Gemini free tier allows **20 requests/day** (gemini-2.5-flash). After that, AI runs fail with `quota_exhausted`. No automatic AI retries yet (Stage 7). See `docs/ai-qualification.md`.
 - **Partial writes:** creating a lead writes the lead row, then its activity row. Sheets has no transactions. If the second write fails, the client sees `503` although the lead was saved. A write that times out may also have been saved. Stage 7 adds idempotency keys and recovery.
 - **Duplicate race:** the duplicate check is check-then-insert. With Google Sheets, two simultaneous identical requests could both pass (Stage 7).
 - **Scale:** each uncached read loads a whole tab. That is fine for hundreds of leads, slow for many thousands.

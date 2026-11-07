@@ -1,7 +1,8 @@
 import LeadBadge from './LeadBadge.jsx'
+import AiQualification from './AiQualification.jsx'
 import { formatDateTime, formatPhone } from '../../utils/formatters.js'
 
-export default function LeadDetail({ lead, onClose }) {
+export default function LeadDetail({ lead, onClose, onRequalify }) {
   if (!lead) return null
 
   return (
@@ -21,7 +22,7 @@ export default function LeadDetail({ lead, onClose }) {
       <dl className="detail-list">
         <dt>Classification</dt>
         <dd>
-          <LeadBadge classification={lead.classification} />
+          <LeadBadge classification={lead.classification} qualificationStatus={lead.qualificationStatus} />
           {lead.score != null && <span className="muted"> score {lead.score}/100</span>}
         </dd>
         <dt>Status</dt>
@@ -43,11 +44,7 @@ export default function LeadDetail({ lead, onClose }) {
       <h3>Customer message</h3>
       <p className="lead-message">{lead.message}</p>
 
-      {lead.classification == null && (
-        <p className="notice">
-          AI qualification is pending. The Gemini integration arrives in Stage 4 (simulated for now).
-        </p>
-      )}
+      <AiQualification key={lead.id} lead={lead} onRequalify={onRequalify} />
     </section>
   )
 }
