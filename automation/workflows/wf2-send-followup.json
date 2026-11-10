@@ -1,0 +1,269 @@
+{
+  "id": "lpWf2SendFollow1",
+  "name": "LeadPilot WF2 - Send approved follow-up",
+  "active": false,
+  "nodes": [
+    {
+      "id": "d3951fca-38df-40b2-9de2-796ba098fbd2",
+      "name": "Approved follow-up event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "followup-approved",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "db5ae488-e201-4059-9af3-3e9ddcb8878c",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "notes": "Only accepts requests with the right x-automation-key header (the \"LeadPilot backend key\" credential). Others get 403.",
+      "notesInFlow": true
+    },
+    {
+      "id": "2e6202d1-0e89-4d30-910f-6d31e3e5e1a6",
+      "name": "Check the event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Never trust incoming data, even from our own backend: check it before using it.\nconst event = $input.first().json.body || {};\nconst d = event.data || {};\nconst text = (t, max) => String(t ?? '').replace(/\\s+/g, ' ').trim().slice(0, max);\nif (event.type !== 'followup.approved') throw new Error('Unexpected event type: ' + text(event.type, 40));\nif (!/^FU-[A-Za-z0-9-]{1,40}$/.test(d.followUpId || '')) throw new Error('The event has no valid followUpId');\nif (!/^LD-[A-Za-z0-9-]{1,40}$/.test(d.leadId || '')) throw new Error('The event has no valid leadId');\n// Stage 6 decision D2A: delivery is SIMULATED. Refuse anything else.\nif (d.delivery !== 'simulated') throw new Error('Only SIMULATED delivery is allowed in Stage 6');\n\nconst message = 'SIMULATED email for follow-up ' + d.followUpId + ' (\"' + text(d.subject, 80) + '\"): NOT sent to the customer, no real email left the system.';\nreturn [{ json: { followUpId: d.followUpId, leadId: d.leadId, message } }];\n"
+      },
+      "notes": "Checks the event. Delivery must be \"simulated\".",
+      "notesInFlow": true
+    },
+    {
+      "id": "2c2b1307-2bae-4ded-afec-0783068eea25",
+      "name": "Ask: still approved?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://localhost:3001/api/automation/followups/' + $json.followUpId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "CHECK FIRST, DELIVER SECOND: the backend is the source of truth for the follow-up status.",
+      "notesInFlow": true
+    },
+    {
+      "id": "8f4ae56b-d36b-404b-b08c-8c5916a85117",
+      "name": "Deliver or stop?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const f = $input.first().json.data || {};\n// Already sent: this event is a duplicate. Stop quietly, so the customer never gets it twice.\nif (f.status === 'sent') return [];\n// Anything else (draft, rejected) must never be delivered: fail, so WF4 tells a person.\nif (f.status !== 'approved') throw new Error('Follow-up ' + f.id + ' is ' + f.status + ', not approved: NOT delivered');\nreturn $('Check the event').all();\n"
+      },
+      "notes": "approved: deliver. sent: duplicate, stop quietly. anything else: fail (escalate).",
+      "notesInFlow": true
+    },
+    {
+      "id": "77a69ffc-c66e-4ad7-b089-2ae576b77160",
+      "name": "Simulated delivery (note on dashboard)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/activity",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), type: 'automation', message: $('Check the event').item.json.message, leadId: $('Check the event').item.json.leadId }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "SIMULATED: instead of emailing the customer, write a note on the dashboard. A real email node replaces this one later.",
+      "notesInFlow": true
+    },
+    {
+      "id": "d6b600f3-c774-4abf-994f-c53876abad3d",
+      "name": "Mark as sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://localhost:3001/api/automation/followups/' + $('Check the event').item.json.followUpId + '/mark-sent' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ via: \"simulated\" }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Safe to retry: the backend never marks a follow-up as sent twice.",
+      "notesInFlow": true
+    },
+    {
+      "id": "57fe1fd9-2dce-450c-84dd-4e389a617702",
+      "name": "Record the run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/workflow-runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), workflow: 'Send approved follow-up', leadId: $('Check the event').item.json.leadId, status: 'success', attempts: 1, maxAttempts: 3 }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Approved follow-up event": {
+      "main": [
+        [
+          {
+            "node": "Check the event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check the event": {
+      "main": [
+        [
+          {
+            "node": "Ask: still approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask: still approved?": {
+      "main": [
+        [
+          {
+            "node": "Deliver or stop?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deliver or stop?": {
+      "main": [
+        [
+          {
+            "node": "Simulated delivery (note on dashboard)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulated delivery (note on dashboard)": {
+      "main": [
+        [
+          {
+            "node": "Mark as sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as sent": {
+      "main": [
+        [
+          {
+            "node": "Record the run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "errorWorkflow": "lpWf4ErrorHand01"
+  },
+  "pinData": {},
+  "tags": []
+}

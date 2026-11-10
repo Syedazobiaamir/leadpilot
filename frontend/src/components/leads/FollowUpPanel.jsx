@@ -4,14 +4,16 @@ import { formatDateTime } from '../../utils/formatters.js'
 
 const STATUS_TEXT = {
   draft: 'AI draft · not sent · needs approval',
-  approved: 'Approved · not sent yet (sending arrives in Stage 6)',
+  approved: 'Approved · waiting for n8n to send it',
   rejected: 'Rejected · will not be sent',
+  sent: 'Sent by n8n · SIMULATED: no real email reached the customer',
 }
 
-// The follow-up email for one lead (Stage 5). The AI only writes DRAFTS; a person approves,
-// edits or rejects them. Nothing is ever sent from this screen.
+// The follow-up email for one lead. The AI only writes DRAFTS; a person approves, edits or
+// rejects them. This screen never sends anything: after approval, n8n does (Stage 6,
+// SIMULATED for now), and the status changes to "sent" when n8n reports back.
 export default function FollowUpPanel({ lead }) {
-  const { followUps, loading, error, generating, requestDraft, approve, reject, edit } = useFollowUps(lead.id)
+  const { followUps, loading, error, generating, waitingForSend, sendNote, requestDraft, approve, reject, edit } = useFollowUps(lead.id)
   const [editing, setEditing] = useState(null) // { id, subject, body } while editing
   const [busy, setBusy] = useState(false)
 
@@ -61,8 +63,16 @@ export default function FollowUpPanel({ lead }) {
           <p className="muted small">
             Written by {latest.aiModel} · {formatDateTime(latest.createdAt)}
             {latest.editedAt && ` · edited ${formatDateTime(latest.editedAt)}`}
-            {latest.decidedAt && ` · ${latest.status} ${formatDateTime(latest.decidedAt)}`}
+            {latest.decidedAt && ` · ${latest.status === 'sent' ? 'approved' : latest.status} ${formatDateTime(latest.decidedAt)}`}
+            {latest.sentAt && ` · sent ${formatDateTime(latest.sentAt)} (${latest.sentVia ?? 'unknown'})`}
           </p>
+
+          {waitingForSend && latest.status === 'approved' && (
+            <p className="ai-pending" role="status">
+              Waiting for n8n to send it (SIMULATED)…
+            </p>
+          )}
+          {sendNote && latest.status === 'approved' && <p className="muted small">{sendNote}</p>}
 
           {latest.status === 'draft' && (
             <div className="button-row">

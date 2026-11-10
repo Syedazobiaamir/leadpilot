@@ -50,8 +50,9 @@ Every response has an `X-Request-Id` header. You can send your own, e.g. an n8n 
 ### `GET /api/health`
 **Liveness:** "the server process is running". Never touches storage, so it stays `200` even when Google Sheets is down.
 ```json
-200 { "status": "ok", "store": "sheets", "ai": "gemini-2.5-flash", "uptimeSeconds": 42, "timestamp": "2026-11-05T06:39:40.375Z" }
+200 { "status": "ok", "store": "sheets", "ai": "gemini-2.5-flash", "automation": "n8n", "uptimeSeconds": 42, "timestamp": "2026-11-05T06:39:40.375Z" }
 ```
+`automation` is `"n8n"` when the backend sends events to n8n (`N8N_WEBHOOK_BASE_URL` set), otherwise `"disabled"`. Like AI, it is optional and never makes the server unhealthy.
 `ai` is the **configured** model, or `"disabled"` when there is no `GEMINI_API_KEY`. It does not test the AI (that would cost quota): use `npm run ai:check` for that. AI is optional, so a broken AI never makes `/health` or `/ready` fail.
 
 ### `GET /api/health/ready`
@@ -174,9 +175,9 @@ The lead is marked `pending` and the AI runs **in the background** (so this requ
 Each AI run writes an activity event: `ai` (`LD-1005 classified as Cold (score 25) by gemini-2.5-flash`) or `error` (`AI qualification failed for LD-1005: … (temporary, can be retried)`). A suspected prompt injection adds an `error` event: `Possible prompt injection in LD-…`.
 
 ### Follow-up drafts (Stage 5)
-The AI writes **drafts only**; a person approves, edits or rejects them. **Nothing is sent by this API** (approved drafts are sent by n8n in Stage 6).
+The AI writes **drafts only**; a person approves, edits or rejects them. **This API never sends a message itself:** approving hands the follow-up to n8n (Stage 6), whose sending is **SIMULATED** for now (no real email leaves the system).
 
-**Follow-up object:** `id` (`FU-...`), `leadId`, `channel` (`email`), `subject`, `body`, `status` (`draft` | `approved` | `rejected`), `aiModel`, `createdAt`, `decidedAt`, `editedAt`.
+**Follow-up object:** `id` (`FU-...`), `leadId`, `channel` (`email`), `subject`, `body`, `status` (`draft` | `approved` | `rejected` | `sent`), `aiModel`, `createdAt`, `decidedAt`, `editedAt`, `sentAt`, `sentVia` (`simulated`, or `null` while not sent).
 
 #### `GET /api/leads/:id/followups`
 The lead's follow-ups, newest first. `200 { "data": [ ... ], "count": 1 }`. Errors: `400 INVALID_LEAD_ID`, `404 LEAD_NOT_FOUND`.
@@ -190,7 +191,7 @@ Asks the Follow-up Agent for a draft. It is written **in the background**, so po
 If the lead already has an open `draft`, no new draft is written (the agent run is recorded as `skipped`). Errors: `400 INVALID_LEAD_ID`, `404 LEAD_NOT_FOUND`, `503 AI_UNAVAILABLE` (no AI key). AI failures and unsafe drafts (prices, promises, placeholders…) are recorded in AgentRuns, and no draft is saved.
 
 #### `POST /api/followups/:id/approve` · `POST /api/followups/:id/reject`
-A person's decision. `200 { "data": { ...followUp, "status": "approved", "decidedAt": "..." } }`. Writes an activity event (`… approved by staff (not sent: sending arrives in Stage 6)`).
+A person's decision. `200 { "data": { ...followUp, "status": "approved", "decidedAt": "..." } }`. Writes an activity event. On approve, if automation is on, the backend sends the `followup.approved` event to n8n **in the background** (`… approved by staff (handed to n8n for SIMULATED sending)`); otherwise the event says `(not sent: n8n automation is off)`. If n8n can't be reached, the approval still succeeds and a `failed` workflow run is recorded.
 
 #### `PATCH /api/followups/:id`
 A person edits a draft. Body: `{ "subject": "5-80 chars", "body": "20-2000 chars" }`. The result stays a `draft` with `editedAt` set. Only shape and length are checked: the AI's content rules don't apply to a person's own words.
@@ -216,11 +217,54 @@ Activity and audit events, newest first. `type` is one of `lead`, `ai`, `automat
 ```
 
 ### `GET /api/workflow-runs`
-Automation workflow runs, newest first. **Simulated sample data** until n8n is connected (Stage 6).
+Automation workflow runs, newest first. Real runs are reported by n8n (`id` `WF-n8n-<execution>`) or recorded by the backend when an event could not reach n8n (`id` `WF-be-...`). The memory store also starts with **simulated sample runs** (`WF-90xx`).
 `status` is one of `success`, `retrying`, `failed` or `escalated`.
 ```json
 200 { "data": [ { "id": "WF-9031", "workflow": "AI qualification", "status": "success", "attempts": 1, "maxAttempts": 3, "lastError": null, ... } ], "count": 8 }
 ```
+
+### Automation endpoints (Stage 6, only for n8n)
+Every `/api/automation/*` request needs the header `x-automation-key: <AUTOMATION_SECRET>` (compared in constant time). The dashboard never calls these.
+
+| Status | Code | When |
+|---|---|---|
+| 503 | `AUTOMATION_NOT_CONFIGURED` | The server has no `AUTOMATION_SECRET` (automation is off) |
+| 401 | `AUTOMATION_UNAUTHORIZED` | Header missing or wrong |
+
+#### `GET /api/automation/check`
+n8n checks its credential. `200 { "data": { "status": "ok", "timestamp": "..." } }`
+
+#### `POST /api/automation/workflow-runs`
+n8n reports a workflow run.
+```json
+{ "executionId": "1234", "workflow": "Send approved follow-up", "leadId": "LD-1001", "status": "success", "attempts": 1, "maxAttempts": 3, "lastError": null, "startedAt": "2026-11-09T10:00:00.000Z" }
+```
+`201` the first time (run `WF-n8n-1234`); `200` when the same `executionId` reports again: the run is **updated, never duplicated** (e.g. `retrying` → `success`). `leadId`, `lastError` and `startedAt` are optional. URLs in `lastError` are replaced with `[URL hidden]` (a Slack webhook URL is a secret) and it is cut to 300 characters. Errors: `400 VALIDATION_ERROR`.
+
+#### `POST /api/automation/activity`
+n8n writes an alert to the activity log (Stage 6 decision D3A: alerts go to the **dashboard**, not Slack).
+```json
+{ "executionId": "18", "type": "automation", "message": "HOT LEAD LD-1012: Linda, HVAC, ...", "leadId": "LD-1012" }
+```
+`type`: `automation` | `escalation` | `recovery` only (n8n can't write lead, AI or error events). `message` 1-500 characters, URLs replaced with `[URL hidden]`. **One event per n8n run** (`id` `EV-n8n-<executionId>`): `201` the first time, `200` with the first event if the run retries. Errors: `400 VALIDATION_ERROR`.
+
+#### `GET /api/automation/followups/:id`
+WF2 checks a follow-up **before** delivering it. Returns only `{ "data": { "id", "leadId", "status", "sentAt" } }` (no message, no customer data). Errors: `400 INVALID_FOLLOWUP_ID`, `404 FOLLOWUP_NOT_FOUND`.
+
+#### `POST /api/automation/followups/:id/mark-sent`
+n8n says it sent an **approved** follow-up. Body: `{ "via": "simulated" }` (the only method in Stage 6).
+`200 { "data": { ...followUp, "status": "sent", "sentAt": "...", "sentVia": "simulated" }, "alreadySent": false }`.
+**Idempotent:** calling it again returns `200` with `"alreadySent": true` and changes nothing, so a retry after a timeout can never record a follow-up as sent twice. Errors: `400 INVALID_FOLLOWUP_ID`, `400 VALIDATION_ERROR`, `404 FOLLOWUP_NOT_FOUND`, `409 FOLLOWUP_NOT_APPROVED`.
+
+### Events the backend sends to n8n
+`POST <N8N_WEBHOOK_BASE_URL>/<path>` with header `x-automation-key` and body `{ "id": "EVT-<uuid>", "type", "occurredAt", "data" }`. Sent in the background with a 5 s deadline; never blocks or fails the API request.
+
+| Type | Path | When | `data` |
+|---|---|---|---|
+| `lead.qualified` | `lead-qualified` | The AI qualified a lead as **Hot** | `leadId`, `firstName`, `serviceType`, `timeline`, `classification`, `score`, `reason` |
+| `followup.approved` | `followup-approved` | A person approved a draft | `followUpId`, `leadId`, `channel`, `subject`, `body`, `delivery: "simulated"` |
+
+**No phone, email, last name or ZIP is ever sent** (data minimization: n8n only needs what it shows on the dashboard). Failure kinds in the log: `unreachable`, `timeout`, `server_error` (temporary); `not_found` (workflow not active), `auth` (secrets differ), `rejected` (need a human).
 
 ### Any other route
 `404 NOT_FOUND`
@@ -238,6 +282,9 @@ Automation workflow runs, newest first. **Simulated sample data** until n8n is c
 | `INVALID_FOLLOWUP_ID` | 400 | Yes | Malformed follow-up ID |
 | `FOLLOWUP_NOT_FOUND` | 404 | Yes | Follow-up does not exist |
 | `FOLLOWUP_ALREADY_DECIDED` | 409 | Yes | Follow-up already approved or rejected |
+| `FOLLOWUP_NOT_APPROVED` | 409 | Yes | mark-sent on a follow-up that is not approved |
+| `AUTOMATION_UNAUTHORIZED` | 401 | Yes | Missing or wrong `x-automation-key` |
+| `AUTOMATION_NOT_CONFIGURED` | 503 | Yes (until configured) | No `AUTOMATION_SECRET` on the server |
 | `DUPLICATE_LEAD` | 409 | Yes | Lead already exists |
 | `PAYLOAD_TOO_LARGE` | 413 | Yes | Body too large |
 | `INTERNAL_ERROR` | 500 | No (may be temporary) | Unexpected server error |
@@ -246,8 +293,10 @@ Automation workflow runs, newest first. **Simulated sample data** until n8n is c
 
 "Permanent" means sending the same request again will fail the same way. Only non-permanent errors should ever be retried.
 
-## Known limitations (Stage 5)
-- Follow-up drafts are never sent by this API (Stage 6). Decisions are not tied to a user (no login until Stage 8).
+## Known limitations (Stage 6)
+- Sending follow-ups is **SIMULATED** (n8n writes a note on the dashboard; no real email). Alerts appear only on the dashboard (no Slack/email/phone notification), so someone has to look. Decisions are not tied to a user (no login until Stage 8).
+- **Events are sent once.** If n8n is down, the event is lost (a `failed` workflow run records it); nothing re-sends it yet (Stage 7). Re-qualifying a lead as Hot sends the alert again.
+- If n8n "sends" a follow-up but crashes before calling mark-sent, the follow-up stays `approved` (Stage 7 recovery).
 - **AI free tier: 20 requests per day** for `gemini-2.5-flash` (verified from Google's own 429 response on 2026-11-05). After that, AI runs fail with `quota_exhausted` until the daily reset. Real use needs a paid tier (rotate the exposed key first).
 - AI results are not always right: see the measured accuracy in [`ai-qualification.md`](ai-qualification.md).
 - No automatic AI retries yet: a failed lead stays `failed` until someone clicks Retry (Stage 7).

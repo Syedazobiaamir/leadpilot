@@ -19,7 +19,7 @@ const PAGES = [
   { id: 'dashboard', label: 'Dashboard', title: 'Dashboard', subtitle: 'Lead pipeline and automation health at a glance' },
   { id: 'leads', label: 'Leads', title: 'Leads', subtitle: 'Search, filter and review customer inquiries' },
   { id: 'new-lead', label: 'New Lead', title: 'Capture a new lead', subtitle: 'Enter a customer inquiry. It is validated before it is saved.' },
-  { id: 'monitoring', label: 'Automation', title: 'Automation monitoring', subtitle: 'AI agent runs, the audit log, and (simulated) workflow runs' },
+  { id: 'monitoring', label: 'Automation', title: 'Automation monitoring', subtitle: 'AI agent runs, n8n workflow runs and the audit log' },
 ]
 
 const DEFAULT_FILTERS = { classification: 'All', status: 'All', search: '' }
@@ -114,8 +114,12 @@ export default function App() {
               </section>
             </div>
             <section className="card">
-              <h2>Workflow runs (simulated)</h2>
-              <p className="muted small">Sample data showing what n8n automation runs will look like. n8n is connected in Stage 6.</p>
+              <h2>Workflow runs</h2>
+              <p className="muted small">
+                Runs marked <strong>n8n</strong> are real n8n automation runs. <strong>Not delivered</strong> means the
+                backend could not reach n8n. <strong>Sample</strong> runs are simulated data from earlier stages.
+                Refreshes every 30 seconds.
+              </p>
               <AutomationStatus runs={workflowRuns} />
             </section>
           </>

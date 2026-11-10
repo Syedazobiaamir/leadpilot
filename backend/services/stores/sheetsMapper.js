@@ -32,13 +32,16 @@ export const TABLES = {
     columns: { id: 'string', type: 'string', message: 'string', leadId: 'string?', timestamp: 'string' },
   },
   followUps: {
-    // Follow-up message DRAFTS written by the Follow-up Agent (Stage 5). Nothing here is ever
-    // sent by this app: "approved" drafts are sent by n8n in Stage 6.
+    // Follow-up message DRAFTS written by the Follow-up Agent (Stage 5). This app never sends
+    // anything itself: n8n sends "approved" drafts and then reports back (Stage 6 → "sent").
     sheet: 'FollowUps',
     columns: {
       id: 'string', leadId: 'string', channel: 'string', subject: 'string', body: 'string',
       status: 'string', aiModel: 'string', createdAt: 'string', decidedAt: 'string?', editedAt: 'string?',
+      // Added in Stage 6: when n8n reported it sent, and how ("simulated" = no real message left).
+      sentAt: 'string?', sentVia: 'string?',
     },
+    addedLater: ['sentAt', 'sentVia'],
   },
   agentRuns: {
     // One row per agent run (Stage 5): the audit trail of what each agent did.

@@ -4,12 +4,15 @@
 //   listForLead(leadId)   GET  /api/leads/:id/followups
 //   approve(id) / reject(id) / edit(id, {subject, body})   human decisions on a draft
 //   start(leadId)         background, for the Orchestrator (Step 6)
+//   markSent(id, {via})   Stage 6: n8n reports it sent an approved follow-up
 //
-// Draft life cycle:  draft ──approve──► approved   (Stage 6: n8n sends approved drafts)
-//                      │  └──reject───► rejected
-//                      └─edit─► draft (editedAt set)
-// Once approved or rejected, a follow-up can no longer change (409).
-// Nothing in this file sends any message.
+// Life cycle:  draft ──approve──► approved ──(n8n sends, then mark-sent)──► sent
+//                │  └──reject───► rejected
+//                └─edit─► draft (editedAt set)
+// Once approved or rejected, a PERSON can no longer change it (409).
+// Approving hands the follow-up to n8n (event "followup.approved"). Nothing in this file
+// sends a message itself. In Stage 6 n8n's sending is SIMULATED (decision D2A).
+import { z } from 'zod'
 import { AppError } from '../utils/AppError.js'
 import { logger as defaultLogger } from '../utils/logger.js'
 import { config } from '../config.js'
@@ -20,11 +23,17 @@ import { createFollowUpAgent } from '../agents/followUpAgent.js'
 import { createToolRegistry } from '../agents/toolRegistry.js'
 import { createTools } from '../agents/tools.js'
 import { runAgent } from '../agents/runAgent.js'
+import { automation } from './automationService.js'
 
 const FOLLOW_UP_ID = /^FU-[A-Za-z0-9-]{1,40}$/
 
-export function createFollowUpService({ ai, store = leadStore, logger = defaultLogger, now = () => new Date(), contractorName = config.contractorName }) {
+// How n8n may say it sent a follow-up. Only "simulated" exists in Stage 6 (no real email).
+const markSentSchema = z.object({ via: z.enum(['simulated']) })
+
+/** getAutomation: returns the CURRENT automation service (so tests can swap it). */
+export function createFollowUpService({ ai, store = leadStore, logger = defaultLogger, now = () => new Date(), contractorName = config.contractorName, getAutomation = automation }) {
   const running = new Map() // lead ID → promise of the draft being written
+  const marking = new Map() // follow-up ID → mark-sent in progress (so two calls can't both write)
   const agent = ai ? createFollowUpAgent({ ai, contractorName, now }) : null
   const registry = createToolRegistry(createTools({ store, now }), { logger })
   if (agent) registry.checkAgent(agent)
@@ -37,10 +46,15 @@ export function createFollowUpService({ ai, store = leadStore, logger = defaultL
     return lead
   }
 
-  async function requireDraft(id) {
+  async function requireFollowUp(id) {
     if (!FOLLOW_UP_ID.test(id)) throw new AppError(400, 'INVALID_FOLLOWUP_ID', 'Follow-up ID must look like FU-...')
     const followUp = (await store.listFollowUps()).find((f) => f.id === id)
     if (!followUp) throw new AppError(404, 'FOLLOWUP_NOT_FOUND', `No follow-up found with ID ${id}`)
+    return followUp
+  }
+
+  async function requireDraft(id) {
+    const followUp = await requireFollowUp(id)
     if (followUp.status !== 'draft') {
       throw new AppError(409, 'FOLLOWUP_ALREADY_DECIDED', `Follow-up ${id} is already ${followUp.status} and can no longer be changed`)
     }
@@ -81,8 +95,35 @@ export function createFollowUpService({ ai, store = leadStore, logger = defaultL
   async function decide(id, status, verb) {
     const followUp = await requireDraft(id)
     const updated = await store.updateFollowUp(id, { status, decidedAt: now().toISOString() })
-    await audit('automation', `Follow-up ${id} ${verb} by staff${status === 'approved' ? ' (not sent: sending arrives in Stage 6)' : ''}`, followUp.leadId)
+    let note = ''
+    if (status === 'approved') {
+      const n8n = getAutomation()
+      // Background: the person gets their answer now, n8n's result shows up as a workflow run.
+      if (n8n.outboundEnabled) n8n.notifyFollowUpApproved(updated)
+      note = n8n.outboundEnabled ? ' (handed to n8n for SIMULATED sending)' : ' (not sent: n8n automation is off)'
+    }
+    await audit('automation', `Follow-up ${id} ${verb} by staff${note}`, followUp.leadId)
     return updated
+  }
+
+  /**
+   * n8n says it sent an approved follow-up. IDEMPOTENT: calling it again (e.g. n8n retried
+   * after a timeout) returns the same result and changes nothing, so a follow-up can never be
+   * recorded as sent twice. Returns { followUp, alreadySent }.
+   */
+  async function markSentOnce(id, input) {
+    const parsed = markSentSchema.safeParse(input ?? {})
+    if (!parsed.success) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'The mark-sent request is invalid', { via: 'via must be "simulated"' })
+    }
+    const followUp = await requireFollowUp(id)
+    if (followUp.status === 'sent') return { followUp, alreadySent: true }
+    if (followUp.status !== 'approved') {
+      throw new AppError(409, 'FOLLOWUP_NOT_APPROVED', `Follow-up ${id} is ${followUp.status}, only approved follow-ups can be sent`)
+    }
+    const updated = await store.updateFollowUp(id, { status: 'sent', sentAt: now().toISOString(), sentVia: parsed.data.via })
+    await audit('automation', `Follow-up ${id} sent by n8n (SIMULATED: no real message left the system)`, followUp.leadId)
+    return { followUp: updated, alreadySent: false }
   }
 
   return {
@@ -111,6 +152,23 @@ export function createFollowUpService({ ai, store = leadStore, logger = defaultL
     },
 
     approve: (id) => decide(id, 'approved', 'approved'),
+
+    /**
+     * For n8n, BEFORE it delivers: is this follow-up still approved (and not sent yet)?
+     * Returns only what n8n needs to decide, not the message or any customer data.
+     */
+    async deliveryStatus(id) {
+      const { leadId, status, sentAt } = await requireFollowUp(id)
+      return { id, leadId, status, sentAt: sentAt ?? null }
+    },
+
+    /** Two mark-sent calls for the same ID at the same moment share one write. */
+    markSent(id, input) {
+      if (marking.has(id)) return marking.get(id)
+      const job = markSentOnce(id, input).finally(() => marking.delete(id))
+      marking.set(id, job)
+      return job
+    },
     reject: (id) => decide(id, 'rejected', 'rejected'),
 
     async edit(id, input) {

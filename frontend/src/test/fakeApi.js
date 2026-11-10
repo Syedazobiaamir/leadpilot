@@ -24,6 +24,8 @@ export const FAKE_DRAFT = {
   aiModel: 'gemini-fake-001',
   decidedAt: null,
   editedAt: null,
+  sentAt: null,
+  sentVia: null,
 }
 
 // What the fake AI decides when it qualifies a lead.
@@ -41,8 +43,11 @@ export const FAKE_AI_RESULT = {
  *   'disabled'  (default) new leads stay "pending"; POST /qualify → 503 AI_UNAVAILABLE
  *   'qualifies' the AI result appears on the lead at the NEXT GET (like a background job)
  *   'fails'     the lead becomes "failed" at the next GET
+ * options.n8n: how n8n behaves after a follow-up is approved (Stage 6)
+ *   'off'   (default) nothing happens: the follow-up stays "approved"
+ *   'sends' it becomes "sent" (SIMULATED) at the next GET, like WF2 running in the background
  */
-export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'disabled' ? 'disabled' : 'writes' } = {}) {
+export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'disabled' ? 'disabled' : 'writes', n8n = 'off' } = {}) {
   const db = {
     leads: structuredClone(sampleLeads),
     activity: structuredClone(sampleActivity),
@@ -86,6 +91,11 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
       if (db.pendingDrafts.has(leadId)) {
         db.pendingDrafts.delete(leadId)
         if (drafts === 'writes') db.followUps.push({ ...FAKE_DRAFT, id: `FU-${db.followUps.length + 1}`, leadId, createdAt: new Date().toISOString() })
+      }
+      if (n8n === 'sends') {
+        for (const f of db.followUps) {
+          if (f.leadId === leadId && f.status === 'approved') Object.assign(f, { status: 'sent', sentAt: new Date().toISOString(), sentVia: 'simulated' })
+        }
       }
       const data = db.followUps.filter((f) => f.leadId === leadId).sort(newestFirst('createdAt'))
       return jsonResponse({ data, count: data.length })

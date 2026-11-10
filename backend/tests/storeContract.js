@@ -30,7 +30,7 @@ export const contractSeed = {
   followUps: [
     {
       id: 'FU-1', leadId: 'LD-2001', channel: 'email', subject: 'About your roof leak', body: 'Hi Ana, thanks for reaching out about the roof leak. Our team will call you to arrange an inspection.',
-      status: 'draft', aiModel: 'gemini-test', createdAt: '2026-11-01T10:00:06.000Z', decidedAt: null, editedAt: null,
+      status: 'draft', aiModel: 'gemini-test', createdAt: '2026-11-01T10:00:06.000Z', decidedAt: null, editedAt: null, sentAt: null, sentVia: null,
     },
   ],
   agentRuns: [
@@ -132,6 +132,21 @@ export function runStoreContract(name, makeStore) {
       const [run] = await store.listWorkflowRuns()
       expect(run).toEqual(contractSeed.workflowRuns[0])
       expect(typeof run.attempts).toBe('number')
+    })
+
+    it('inserts and updates workflow runs (Stage 6: real n8n runs)', async () => {
+      const run = {
+        id: 'WF-n8n-77', workflow: 'Send approved follow-up', leadId: null, status: 'retrying', attempts: 1, maxAttempts: 3,
+        lastError: '=cmd()', startedAt: '2026-11-03T10:00:00.000Z',
+      }
+      await store.insertWorkflowRun(run)
+      expect((await store.listWorkflowRuns()).find((r) => r.id === 'WF-n8n-77')).toEqual(run) // formula-like text stays text
+
+      const done = await store.updateWorkflowRun('WF-n8n-77', { status: 'success', attempts: 2, lastError: null, id: 'WF-HACK' })
+      expect(done).toEqual({ ...run, status: 'success', attempts: 2, lastError: null })
+      expect((await store.listWorkflowRuns()).find((r) => r.id === 'WF-n8n-77')).toEqual(done)
+      expect(await store.updateWorkflowRun('WF-404', { status: 'success' })).toBeNull()
+      expect((await store.listWorkflowRuns()).find((r) => r.id === 'WF-1').status).toBe('failed') // untouched
     })
 
     it('returns copies: changing a returned object does not change the store', async () => {

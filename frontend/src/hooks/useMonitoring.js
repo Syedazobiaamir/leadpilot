@@ -1,7 +1,11 @@
-// Loads the activity log, agent runs (real, Stage 5) and workflow runs (simulated until Stage 6).
+// Loads the activity log, agent runs (Stage 5) and workflow runs (n8n, Stage 6).
+// n8n writes alerts in the background, so the data refreshes itself every 30 seconds.
 // It follows the same pattern as useLeads.js. See the comments there.
 import { useCallback, useEffect, useState } from 'react'
 import { getActivity, getAgentRuns, getWorkflowRuns } from '../services/leadService.js'
+
+// Long in tests, so a test never sees a surprise refresh.
+export const MONITORING_REFRESH_MS = import.meta.env.MODE === 'test' ? 600_000 : 30_000
 
 async function loadMonitoring() {
   try {
@@ -44,6 +48,13 @@ export function useMonitoring() {
   const refresh = useCallback(async () => {
     applyResult(await loadMonitoring())
   }, [applyResult])
+
+  // Automatic background refresh, so n8n alerts ("HOT LEAD", "NEEDS A PERSON") show up without
+  // reloading the page. A failed refresh shows the error state, like any other load.
+  useEffect(() => {
+    const timer = setInterval(refresh, MONITORING_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [refresh])
 
   // Full reload with the loading screen, e.g. from a "Try again" button.
   const reload = useCallback(async () => {

@@ -122,7 +122,7 @@ export const getFollowUps = (leadId) =>
 export const requestFollowUp = (leadId) =>
   attempt(async () => ({ request: (await request(`/leads/${encodeURIComponent(leadId)}/followups`, { method: 'POST' })).data }))
 
-/** A PERSON approves a draft. Nothing is sent here (sending is Stage 6). */
+/** A PERSON approves a draft. Nothing is sent here: n8n sends it afterwards (Stage 6, SIMULATED). */
 export const approveFollowUp = (id) =>
   attempt(async () => ({ followUp: (await request(`/followups/${encodeURIComponent(id)}/approve`, { method: 'POST' })).data }))
 

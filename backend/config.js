@@ -87,6 +87,40 @@ export function readAiConfig(source = process.env) {
   return { apiKey, model }
 }
 
+/**
+ * Reads the n8n automation settings (Stage 6). Automation is OPTIONAL, like AI:
+ *   neither setting      → null (automation off: no events are sent, /api/automation/* answers 503)
+ *   AUTOMATION_SECRET    → n8n may call /api/automation/* (with header x-automation-key)
+ *   + N8N_WEBHOOK_BASE_URL → the backend also sends events to n8n
+ * The secret is never put in a message.
+ */
+export function readAutomationConfig(source = process.env) {
+  const secret = (source.AUTOMATION_SECRET ?? '').trim().replace(/^["']|["']$/g, '')
+  const webhookBaseUrl = (source.N8N_WEBHOOK_BASE_URL ?? '').trim().replace(/\/+$/, '') // no trailing "/"
+  if (!secret && !webhookBaseUrl) return null
+
+  const problems = []
+  if (!secret) problems.push('AUTOMATION_SECRET is missing (it is required when N8N_WEBHOOK_BASE_URL is set)')
+  else if (secret.length < 32 || /\s/.test(secret)) {
+    problems.push('AUTOMATION_SECRET must be at least 32 characters with no spaces (generate one: see backend/README.md)')
+  }
+  if (webhookBaseUrl) {
+    let url = null
+    try {
+      url = new URL(webhookBaseUrl)
+    } catch {
+      // handled below
+    }
+    if (!url || !['http:', 'https:'].includes(url.protocol)) {
+      problems.push('N8N_WEBHOOK_BASE_URL must be a full http(s) URL, e.g. http://localhost:5678/webhook')
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`n8n automation is not configured correctly:\n  - ${problems.join('\n  - ')}`)
+  }
+  return { secret, webhookBaseUrl: webhookBaseUrl || null }
+}
+
 // Fast, low-cost model. Checked against the models your key can use with "npm run ai:check".
 export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'
 
@@ -116,4 +150,9 @@ export const config = {
   aiTimeoutMs: 6_000,
   // The business name used to sign follow-up drafts (Stage 5). A FICTIONAL demo name by default.
   contractorName: (process.env.CONTRACTOR_NAME ?? '').trim() || 'LeadPilot Demo Contracting',
+  // n8n automation settings (Stage 6), or null when automation is off.
+  // SAFETY: automated tests ALWAYS have it off (tests inject a fake), so no test can reach a real n8n.
+  automation: env === 'test' ? null : readAutomationConfig(),
+  // Give up on sending an event to n8n after this long (ms). Events are sent in the background.
+  automationTimeoutMs: 5_000,
 }

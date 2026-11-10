@@ -201,14 +201,14 @@ describe('human decisions: approve / reject / edit', () => {
     return (await request(app).get('/api/leads/LD-1001/followups')).body.data[0].id
   }
 
-  it('approve → "approved" with decidedAt, audit says NOT sent', async () => {
+  it('approve → "approved" with decidedAt, audit says NOT sent while automation is off', async () => {
     const id = await draftId()
     const res = await request(app).post(`/api/followups/${id}/approve`)
     expect(res.status).toBe(200)
     expect(res.body.data).toMatchObject({ id, status: 'approved' })
     expect(Number.isNaN(Date.parse(res.body.data.decidedAt))).toBe(false)
     const events = (await request(app).get('/api/activity')).body.data
-    expect(events.map((e) => e.message)).toContain(`Follow-up ${id} approved by staff (not sent: sending arrives in Stage 6)`)
+    expect(events.map((e) => e.message)).toContain(`Follow-up ${id} approved by staff (not sent: n8n automation is off)`)
   })
 
   it('reject → "rejected"; a new draft can then be requested', async () => {

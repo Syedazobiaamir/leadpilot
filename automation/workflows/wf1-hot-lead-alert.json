@@ -1,0 +1,156 @@
+{
+  "id": "lpWf1HotLeadAlrt",
+  "name": "LeadPilot WF1 - Hot-lead alert",
+  "active": false,
+  "nodes": [
+    {
+      "id": "c930c871-1a79-45e1-a58f-c07c5a17802d",
+      "name": "Hot lead event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-qualified",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "cb236c3d-1f30-46be-b9fc-891e3e570f29",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "notes": "Only accepts requests with the right x-automation-key header (the \"LeadPilot backend key\" credential). Others get 403.",
+      "notesInFlow": true
+    },
+    {
+      "id": "83417420-267e-4e36-b230-386ea0df9de9",
+      "name": "Check the event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Never trust incoming data, even from our own backend: check it before using it.\nconst event = $input.first().json.body || {};\nconst d = event.data || {};\nconst text = (t, max) => String(t ?? '').replace(/\\s+/g, ' ').trim().slice(0, max);\nif (event.type !== 'lead.qualified') throw new Error('Unexpected event type: ' + text(event.type, 40));\nif (!/^LD-[A-Za-z0-9-]{1,40}$/.test(d.leadId || '')) throw new Error('The event has no valid leadId');\nif (d.classification !== 'Hot') throw new Error('Only Hot leads get an alert');\n\n// First name only: no phone, email or address is ever in the event.\nlet message = 'HOT LEAD ' + d.leadId + ': ' + text(d.firstName, 40) + ', ' + text(d.serviceType, 40) + ', timeline ' + text(d.timeline, 30) + ', score ' + text(d.score, 5) + '. Call them first.';\nif (d.reason) message += ' Why: ' + text(d.reason, 200);\n\nreturn [{ json: { leadId: d.leadId, message: message.slice(0, 500) } }];\n"
+      },
+      "notes": "Checks the event, then writes the alert text.",
+      "notesInFlow": true
+    },
+    {
+      "id": "617a2e68-3eda-4352-897c-868ab0328d49",
+      "name": "Alert on the dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/activity",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), type: 'automation', message: $('Check the event').item.json.message, leadId: $('Check the event').item.json.leadId }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Shows the alert on the dashboard (Activity). Safe to retry: one event per n8n run.",
+      "notesInFlow": true
+    },
+    {
+      "id": "e50a59f3-2ef6-4fd6-8881-3bbd98ae1042",
+      "name": "Record the run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/workflow-runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), workflow: 'Hot-lead alert', leadId: $('Check the event').item.json.leadId, status: 'success', attempts: 1, maxAttempts: 3 }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Hot lead event": {
+      "main": [
+        [
+          {
+            "node": "Check the event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check the event": {
+      "main": [
+        [
+          {
+            "node": "Alert on the dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert on the dashboard": {
+      "main": [
+        [
+          {
+            "node": "Record the run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "errorWorkflow": "lpWf4ErrorHand01"
+  },
+  "pinData": {},
+  "tags": []
+}

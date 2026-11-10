@@ -65,6 +65,14 @@ async function main() {
   check('Malformed ID → 400 INVALID_LEAD_ID', (await call('/api/leads/abc')).json?.error?.code === 'INVALID_LEAD_ID')
   check('Unknown route → 404 NOT_FOUND', (await call('/api/nope')).json?.error?.code === 'NOT_FOUND')
 
+  // --- Stage 6: n8n-only endpoints must refuse anyone without the automation key
+  check('Health reports automation (n8n or disabled)', ['n8n', 'disabled'].includes(health.json?.automation), `automation=${health.json?.automation}`)
+  const noKey = await call('/api/automation/check')
+  check('/api/automation/* without key → 401 (or 503 when automation is off)',
+    ['AUTOMATION_UNAUTHORIZED', 'AUTOMATION_NOT_CONFIGURED'].includes(noKey.json?.error?.code), `status=${noKey.status}`)
+  const wrongKey = await call('/api/automation/workflow-runs', { method: 'POST', body: {}, headers: { 'x-automation-key': 'guess' } })
+  check('/api/automation/* with a wrong key is refused', wrongKey.status === 401 || wrongKey.status === 503, `status=${wrongKey.status}`)
+
   // --- Create
   const created = await call('/api/leads', { method: 'POST', body: { ...lead, status: 'Won', classification: 'Hot' } })
   const newId = created.json?.data?.id

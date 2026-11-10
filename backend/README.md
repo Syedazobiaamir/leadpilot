@@ -36,6 +36,8 @@ Settings live in `backend/.env` (copy `.env.example`). `.env` is never committed
 | `GEMINI_API_KEY` | (empty = AI off) | Key from Google AI Studio. **Secret.** Without it, leads stay `pending` and the server still runs. **Tests always have AI off.** |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Optional model override. `npm run ai:check` checks it |
 | `CONTRACTOR_NAME` | `LeadPilot Demo Contracting` (fictional) | Business name that signs AI follow-up drafts |
+| `AUTOMATION_SECRET` | (empty = automation off) | Shared secret with n8n, at least 32 characters. **Secret.** n8n sends it as `x-automation-key`; the backend sends it to n8n the same way. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Tests always have automation off.** |
+| `N8N_WEBHOOK_BASE_URL` | (empty = no events sent) | Where n8n's Webhook nodes listen, e.g. `http://localhost:5678/webhook`. Needs `AUTOMATION_SECRET` |
 
 With `DATA_STORE=sheets` and a missing or malformed Google setting, the server **refuses to start** and lists every problem.
 

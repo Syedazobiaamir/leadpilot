@@ -91,7 +91,7 @@ orchestrator  success  validation: blocked → qualification: skipped (blocked l
 
 No API key appeared in any log.
 
-- **Follow-up eval** (`npm run ai:eval-followup`, 8 cases incl. Spanish and 2 injection attempts): **pending**, to run when the free daily quota allows (~8 requests).
+- **Follow-up eval** (`npm run ai:eval-followup`, 8 cases incl. Spanish and 2 injection attempts), run 1 on 2026-11-09 with `gemini-2.5-flash`: **8/8 drafts passed every guardrail check, 2/2 injections resisted and flagged, 0 false alarms, 0 errors**, average 2.8 s per draft. Saved in `backend/evals/followup-run-1.json`. 8 cases is a small set: it shows the guardrails work on these examples, not that they can never fail.
 
 ## Limitations
 - Nothing is sent yet (Stage 6, n8n). Approvals are not tied to a user (no login until Stage 8).

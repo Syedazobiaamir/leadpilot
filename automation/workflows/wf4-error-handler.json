@@ -1,0 +1,172 @@
+{
+  "id": "lpWf4ErrorHand01",
+  "name": "LeadPilot WF4 - Error handler",
+  "active": false,
+  "nodes": [
+    {
+      "id": "bc3098e2-add2-495d-b6ea-78388b1007c7",
+      "name": "A LeadPilot workflow failed",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "29328d63-7874-49d3-aeb5-de0aa7dfba6d",
+      "name": "Prepare the escalation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The Error Trigger gives us the failed run: which workflow, which step, what error.\nconst e = $input.first().json;\nconst ex = e.execution || {};\nconst wf = e.workflow || {};\nconst names = { lpWf1HotLeadAlrt: 'Hot-lead alert', lpWf2SendFollow1: 'Send approved follow-up', lpWf3HealthMon01: 'Health monitor' };\n\n// Error texts can contain URLs with secrets in them: hide them, keep it short.\nconst clean = (t) => String(t || 'Unknown error').replace(/https?:\\/\\/\\S+/gi, '[URL hidden]').replace(/\\s+/g, ' ').trim().slice(0, 250);\n\nconst workflow = names[wf.id] || String(wf.name || 'Unknown workflow').slice(0, 80);\nconst failedNode = String(ex.lastNodeExecuted || 'unknown step').slice(0, 60);\nconst error = clean(ex.error && ex.error.message);\n// A trigger failure has no execution ID: make one, so the run can still be recorded.\nconst executionId = String(ex.id || 'trigger-' + Date.now());\nconst message = 'NEEDS A PERSON: ' + workflow + ' failed at \"' + failedNode + '\": ' + error + (ex.id ? ' (n8n run #' + ex.id + ')' : '');\n\nreturn [{ json: { workflow, failedNode, error, executionId, message, leadId: null } }];\n"
+      },
+      "notes": "Runs when any LeadPilot workflow fails (their settings point here).",
+      "notesInFlow": true
+    },
+    {
+      "id": "8c678d20-48e8-47f1-8699-ca322ca40d61",
+      "name": "Escalate on the dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/activity",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), type: 'escalation', message: $('Prepare the escalation').item.json.message, leadId: $('Prepare the escalation').item.json.leadId }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "notes": "Shows the escalation on the dashboard. Fails quietly when the backend itself is down (checked at the end).",
+      "notesInFlow": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "70a0eef8-4bb1-464b-bf93-e327e91d0cf1",
+      "name": "Record the escalation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/workflow-runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: $('Prepare the escalation').item.json.executionId, workflow: $('Prepare the escalation').item.json.workflow, leadId: null, status: 'escalated', attempts: 1, maxAttempts: 1, lastError: $('Prepare the escalation').item.json.failedNode + ': ' + $('Prepare the escalation').item.json.error }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "notes": "Marks the failed run as escalated on the dashboard.",
+      "notesInFlow": true
+    },
+    {
+      "id": "8caa2fb5-ce47-4ff8-81da-710aba42495b",
+      "name": "Did the dashboard get it?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// If the backend is down (e.g. a WF3 outage), nothing could be written. Fail THIS run on\n// purpose, so the escalation is at least visible (red) in n8n > Executions. An error\n// workflow never triggers itself, so this cannot loop.\nif ($('Escalate on the dashboard').first().json.error) {\n  throw new Error('Could not reach the backend: this escalation is ONLY visible here in n8n. ' + $('Prepare the escalation').first().json.message);\n}\nreturn $input.all();\n"
+      },
+      "notes": "Makes an escalation that could not reach the dashboard visible here instead.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "A LeadPilot workflow failed": {
+      "main": [
+        [
+          {
+            "node": "Prepare the escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare the escalation": {
+      "main": [
+        [
+          {
+            "node": "Escalate on the dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate on the dashboard": {
+      "main": [
+        [
+          {
+            "node": "Record the escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record the escalation": {
+      "main": [
+        [
+          {
+            "node": "Did the dashboard get it?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}

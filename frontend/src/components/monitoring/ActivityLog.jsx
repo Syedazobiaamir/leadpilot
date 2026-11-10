@@ -1,4 +1,4 @@
-import { formatDateTime } from '../../utils/formatters.js'
+import { activityHighlight, formatDateTime } from '../../utils/formatters.js'
 
 const TYPE_LABELS = {
   lead: 'Lead',
@@ -10,6 +10,7 @@ const TYPE_LABELS = {
 }
 
 // A timeline of what happened in the system: the audit log.
+// n8n alerts (Stage 6) stand out: escalations ("NEEDS A PERSON") and hot-lead alerts.
 export default function ActivityLog({ events, limit }) {
   const visible = limit ? events.slice(0, limit) : events
 
@@ -20,7 +21,7 @@ export default function ActivityLog({ events, limit }) {
   return (
     <ol className="activity-log">
       {visible.map((event) => (
-        <li key={event.id} className="activity-item">
+        <li key={event.id} className={`activity-item${activityHighlight(event) ? ` activity-${activityHighlight(event)}` : ''}`}>
           <span className={`event-type type-${event.type}`}>{TYPE_LABELS[event.type] ?? event.type}</span>
           <div>
             <p className="activity-message">{event.message}</p>

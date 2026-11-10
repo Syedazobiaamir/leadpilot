@@ -1,0 +1,246 @@
+{
+  "id": "lpWf3HealthMon01",
+  "name": "LeadPilot WF3 - Health monitor",
+  "active": false,
+  "nodes": [
+    {
+      "id": "6b1e8f0a-3c1d-4a0e-9a51-0f3d1c2b7a01",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6b1e8f0a-3c1d-4a0e-9a51-0f3d1c2b7a02",
+      "name": "Check backend readiness",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "GET /api/health/ready. 'Never error' + 'full response': a 503 is DATA for the next node, not a crash. If the backend doesn't answer at all, retry twice (5 s apart) before believing it, then continue with the error as data.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3001/api/health/ready",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "6b1e8f0a-3c1d-4a0e-9a51-0f3d1c2b7a03",
+      "name": "Decide: alert, recovered or quiet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "notes": "Remembers the last state (workflow static data) so a long outage gives ONE alert and ONE recovery, not one every 5 minutes.",
+      "notesInFlow": true,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// What did the readiness check see?\n//   200            -> healthy\n//   503 (or other) -> the backend runs, but a dependency (Google Sheets) is not usable\n//   no answer      -> the backend is not running, or too slow\nconst res = $input.first().json;\nlet health;\nif (res.error) {\n  health = { ok: false, problem: 'BACKEND_UNREACHABLE', detail: 'The backend did not answer (not running, or slower than 10 s).' };\n} else if (res.statusCode === 200) {\n  health = { ok: true };\n} else {\n  const err = (res.body && res.body.error) || {};\n  health = { ok: false, problem: err.code || `HTTP_${res.statusCode}`, detail: err.message || 'The backend answered but is not ready.' };\n}\n\n// Static data survives between runs, but ONLY for automatic (published) runs,\n// not when you click \"Execute workflow\" by hand.\nconst state = $getWorkflowStaticData('global');\nconst now = new Date();\n\nif (!health.ok && !state.down) {\n  state.down = { since: now.toISOString(), problem: health.problem };\n  return [{ json: { action: 'alert', ...health, since: state.down.since } }];\n}\nif (!health.ok) {\n  return [{ json: { action: 'still_down', ...health, since: state.down.since } }];\n}\nif (state.down) {\n  const minutes = Math.max(1, Math.round((now - new Date(state.down.since)) / 60000));\n  const problem = state.down.problem;\n  delete state.down;\n  return [{ json: { action: 'recovered', minutes, problem } }];\n}\nreturn [{ json: { action: 'quiet' } }];\n"
+      }
+    },
+    {
+      "id": "6b1e8f0a-3c1d-4a0e-9a51-0f3d1c2b7a04",
+      "name": "What happened?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1a1e0b2-0001-4c55-8d9e-aa0000000001",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "alert",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "alert"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1a1e0b2-0002-4c55-8d9e-aa0000000002",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "recovered",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "recovered"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1e8f0a-3c1d-4a0e-9a51-0f3d1c2b7a05",
+      "name": "Raise alert (fails this run)",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        900,
+        -100
+      ],
+      "notes": "Failing on purpose: a failed run is what triggers the error workflow (WF4), which escalates to a person. The monitor cannot record this in the backend: the backend is the thing that is down.",
+      "notesInFlow": true,
+      "parameters": {
+        "errorMessage": "={{ 'Backend not ready: ' + $json.problem + ' - ' + $json.detail }}"
+      }
+    },
+    {
+      "id": "6b1e8f0a-3c1d-4a0e-9a51-0f3d1c2b7a06",
+      "name": "Record the outage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        100
+      ],
+      "notes": "The backend is back, so now it can store what happened. Uses the 'LeadPilot backend key' credential (header x-automation-key).",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/workflow-runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), workflow: 'Health monitor', leadId: null, status: 'success', attempts: 1, maxAttempts: 1, lastError: 'Recovered: the backend was not ready for about ' + $json.minutes + ' min (' + $json.problem + ')' }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Check backend readiness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check backend readiness": {
+      "main": [
+        [
+          {
+            "node": "Decide: alert, recovered or quiet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide: alert, recovered or quiet": {
+      "main": [
+        [
+          {
+            "node": "What happened?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "What happened?": {
+      "main": [
+        [
+          {
+            "node": "Raise alert (fails this run)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record the outage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "errorWorkflow": "lpWf4ErrorHand01"
+  },
+  "pinData": {},
+  "tags": []
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDateTime, formatPercent, formatPhone } from './formatters.js'
+import { activityHighlight, formatDateTime, formatPercent, formatPhone, workflowRunSource } from './formatters.js'
 import { computeLeadStats, computeWorkflowStats, filterLeads } from './leadStats.js'
 
 const leads = [
@@ -63,5 +63,23 @@ describe('formatters', () => {
   it('formats dates and reports invalid ones', () => {
     expect(formatDateTime('2026-11-03T14:05:00Z')).toMatch(/Nov \d, 2026/)
     expect(formatDateTime('garbage')).toBe('Unknown date')
+  })
+})
+
+describe('workflowRunSource (Stage 6)', () => {
+  it('tells real n8n runs, failed backend deliveries and sample data apart', () => {
+    expect(workflowRunSource('WF-n8n-17')).toBe('n8n')
+    expect(workflowRunSource('WF-be-1731-1')).toBe('backend')
+    expect(workflowRunSource('WF-9031')).toBe('sample')
+    expect(workflowRunSource(undefined)).toBe('sample')
+  })
+})
+
+describe('activityHighlight (Stage 6)', () => {
+  it('marks escalations and hot-lead alerts, nothing else', () => {
+    expect(activityHighlight({ type: 'escalation', message: 'NEEDS A PERSON: ...' })).toBe('needs-person')
+    expect(activityHighlight({ type: 'automation', message: 'HOT LEAD LD-1012: Linda, HVAC' })).toBe('hot')
+    expect(activityHighlight({ type: 'automation', message: 'Follow-up FU-1 sent by n8n' })).toBeNull()
+    expect(activityHighlight({ type: 'lead', message: 'a hot lead was captured' })).toBeNull()
   })
 })

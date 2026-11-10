@@ -64,6 +64,8 @@ export function createFollowUpAgent({ ai, contractorName, now = () => new Date()
         createdAt: now().toISOString(),
         decidedAt: null,
         editedAt: null,
+        sentAt: null, // Stage 6: set when n8n reports the message was sent
+        sentVia: null,
       })
 
       try {

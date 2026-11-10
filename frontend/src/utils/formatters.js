@@ -28,3 +28,22 @@ export function formatPercent(ratio) {
   if (!Number.isFinite(ratio)) return '0%'
   return `${Math.round(ratio * 1000) / 10}%`
 }
+
+/**
+ * Where a workflow run came from (Stage 6), from its ID:
+ *   WF-n8n-...  a real n8n run (n8n reported it)
+ *   WF-be-...   the backend could not deliver an event to n8n (the workflow never started)
+ *   anything else: SIMULATED sample data from earlier stages
+ */
+export function workflowRunSource(id) {
+  if (String(id).startsWith('WF-n8n-')) return 'n8n'
+  if (String(id).startsWith('WF-be-')) return 'backend'
+  return 'sample'
+}
+
+/** Alerts written by n8n start with these words (see automation/documentation/workflows.md). */
+export function activityHighlight(event) {
+  if (event.type === 'escalation') return 'needs-person'
+  if (/^HOT LEAD /.test(event.message ?? '')) return 'hot'
+  return null
+}

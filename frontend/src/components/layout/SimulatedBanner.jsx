@@ -4,7 +4,7 @@ export default function SimulatedBanner() {
     <div className="simulated-banner" role="note">
       <strong>Demo mode:</strong> the sample leads are fictional, and their Hot/Warm/Cold labels are simulated
       sample data (marked “Simulated”). New leads are classified by Gemini AI when the server has an AI key.
-      Automation runs are simulated. No automation service is connected yet.
+      Follow-up emails are SIMULATED: n8n marks them “sent”, but no real email reaches anyone.
     </div>
   )
 }

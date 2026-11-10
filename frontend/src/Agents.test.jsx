@@ -9,8 +9,8 @@ import { FAKE_DRAFT, installFakeApi } from './test/fakeApi.js'
 afterEach(() => vi.unstubAllGlobals())
 
 /** Renders the app, optionally changing the fake data first, and opens one lead. */
-async function openLead(name, { ai = 'qualifies', setup } = {}) {
-  const api = installFakeApi({ ai })
+async function openLead(name, { ai = 'qualifies', n8n = 'off', setup } = {}) {
+  const api = installFakeApi({ ai, n8n })
   setup?.(api.db)
   const user = userEvent.setup()
   render(<App />)
@@ -78,12 +78,25 @@ describe('follow-up drafts', () => {
     expect(await within(panel()).findByText(/Thank you for reaching out/)).toBeInTheDocument()
   })
 
-  it('Approve → "approved, not sent yet"; the buttons disappear', async () => {
-    const { user, panel } = await openLead('Maria Gonzalez', { setup: (db) => db.followUps.push(draftFor('LD-1001')) })
+  it('Approve with n8n running → "waiting for n8n", then "Sent … SIMULATED"; the buttons disappear', async () => {
+    const { user, panel } = await openLead('Maria Gonzalez', { n8n: 'sends', setup: (db) => db.followUps.push(draftFor('LD-1001')) })
     await user.click(await within(panel()).findByRole('button', { name: 'Approve' }))
-    expect(await within(panel()).findByText(/Approved · not sent yet \(sending arrives in Stage 6\)/)).toBeInTheDocument()
+    expect(await within(panel()).findByText(/Approved · waiting for n8n to send it/)).toBeInTheDocument()
     expect(within(panel()).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
     expect(within(panel()).queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument()
+
+    expect(await within(panel()).findByText(/Sent by n8n · SIMULATED: no real email reached the customer/)).toBeInTheDocument()
+    expect(within(panel()).getByText(/sent .* \(simulated\)/)).toBeInTheDocument()
+    expect(within(panel()).queryByRole('status')).not.toBeInTheDocument() // waiting has stopped
+  })
+
+  it('Approve with n8n off → stays "approved", and says so honestly after a while (never "sent")', async () => {
+    const { user, panel } = await openLead('Maria Gonzalez', { setup: (db) => db.followUps.push(draftFor('LD-1001')) })
+    await user.click(await within(panel()).findByRole('button', { name: 'Approve' }))
+    expect(await within(panel()).findByRole('status')).toHaveTextContent(/Waiting for n8n to send it/)
+    expect(await within(panel()).findByText(/n8n has not confirmed sending yet/)).toBeInTheDocument()
+    expect(within(panel()).getByText(/Approved · waiting for n8n/)).toBeInTheDocument()
+    expect(within(panel()).queryByText(/Sent by n8n/)).not.toBeInTheDocument()
   })
 
   it('Reject → "rejected"; a new draft can be requested', async () => {
@@ -137,7 +150,7 @@ describe('agent runs (Automation page and dashboard)', () => {
     { runId: 'AR-2', leadId: 'LD-1014', agent: 'qualification', status: 'failed', durationMs: 900, errorKind: 'quota_exhausted', detail: "Gemini's daily quota is used up", startedAt: '2026-11-07T08:22:00.000Z' },
   ]
 
-  it('the Automation page lists real agent runs, and labels the workflow runs as simulated', async () => {
+  it('the Automation page lists real agent runs, and says where each workflow run came from', async () => {
     const api = installFakeApi()
     api.db.agentRuns.push(...runs)
     const user = userEvent.setup()
@@ -149,12 +162,47 @@ describe('agent runs (Automation page and dashboard)', () => {
     expect(within(list).getByText('Orchestrator')).toBeInTheDocument()
     expect(within(list).getByText(/validation: ok → qualification: Hot 95/)).toBeInTheDocument()
     expect(within(list).getByText('Error: quota_exhausted')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Workflow runs (simulated)' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Workflow runs' })).toBeInTheDocument()
+    // The fixture runs are sample data: each one is labelled "Sample", none claims to be from n8n
+    const runList = screen.getByRole('heading', { name: 'Workflow runs' }).closest('section')
+    expect(within(runList).getAllByTitle('SIMULATED sample data from an earlier stage').length).toBe(api.db.workflowRuns.length)
+    expect(within(runList).queryByTitle('A real run, reported by n8n')).not.toBeInTheDocument()
   })
 
   it('the dashboard shows recent agent runs, or says there are none yet', async () => {
     installFakeApi()
     render(<App />)
     expect(await screen.findByText(/No agent runs yet/)).toBeInTheDocument()
+  })
+})
+
+describe('n8n automation on the Automation page (Stage 6)', () => {
+  it('labels real n8n runs and undelivered events, and highlights escalations and hot-lead alerts', async () => {
+    const api = installFakeApi()
+    api.db.workflowRuns.push(
+      { id: 'WF-n8n-17', workflow: 'Send approved follow-up', leadId: 'LD-1013', status: 'success', attempts: 1, maxAttempts: 3, lastError: null, startedAt: '2026-11-09T07:52:58.000Z' },
+      { id: 'WF-be-1-1', workflow: 'Hot-lead alert', leadId: 'LD-1012', status: 'failed', attempts: 1, maxAttempts: 1, lastError: 'Event not delivered to n8n: Could not reach n8n', startedAt: '2026-11-09T07:50:00.000Z' },
+    )
+    api.db.activity.push(
+      { id: 'EV-n8n-19', type: 'escalation', message: 'NEEDS A PERSON: Send approved follow-up failed at "Mark as sent": timeout', leadId: null, timestamp: '2026-11-09T07:53:55.000Z' },
+      { id: 'EV-n8n-18', type: 'automation', message: 'HOT LEAD LD-1012: Linda, HVAC, timeline ASAP, score 95.', leadId: 'LD-1012', timestamp: '2026-11-09T07:53:28.000Z' },
+    )
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Hot leads to call first' })
+    await user.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('button', { name: 'Automation' }))
+
+    const runs = screen.getByRole('heading', { name: 'Workflow runs' }).closest('section')
+    expect(within(runs).getByText('Send approved follow-up').closest('li')).toHaveTextContent('n8n')
+    expect(within(runs).getByText(/Event not delivered to n8n/).closest('li')).toHaveTextContent('Not delivered')
+
+    expect(screen.getByText(/NEEDS A PERSON/).closest('li')).toHaveClass('activity-needs-person')
+    expect(screen.getByText(/HOT LEAD LD-1012/).closest('li')).toHaveClass('activity-hot')
+  })
+
+  it('the banner says follow-up emails are SIMULATED', async () => {
+    installFakeApi()
+    render(<App />)
+    expect(await screen.findByRole('note')).toHaveTextContent(/Follow-up emails are SIMULATED/)
   })
 })

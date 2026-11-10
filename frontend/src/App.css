@@ -612,3 +612,14 @@ button:focus-visible {
 .agent-status-failed { background: var(--danger-bg); color: var(--danger); }
 .agent-status-denied { background: var(--hot-bg); color: var(--hot); }
 .run-detail { margin: 6px 0 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+
+/* ---- Stage 6: n8n automation -------------------------------------------------------- */
+.badge-followup-sent { background: var(--cold-bg); color: var(--cold); }
+.run-source { font-size: 0.72rem; }
+.run-source-n8n { background: var(--success-bg); color: var(--success); }
+.run-source-backend { background: var(--danger-bg); color: var(--danger); }
+.run-source-sample { background: var(--pending-bg); color: var(--pending); }
+/* n8n alerts stand out in the activity log */
+.activity-needs-person { border-left: 4px solid var(--danger); padding-left: 8px; }
+.activity-needs-person .activity-message { font-weight: 600; }
+.activity-hot { border-left: 4px solid var(--hot); padding-left: 8px; }

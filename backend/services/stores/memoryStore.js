@@ -2,7 +2,8 @@
 // Used by default and by all automated tests.
 //
 // Every store (memory, sheets) has the SAME functions:
-//   listLeads, findLeadById, insertLead, listActivity, insertActivity, listWorkflowRuns
+//   listLeads, findLeadById, insertLead, updateLead, listActivity, insertActivity,
+//   listWorkflowRuns, insertWorkflowRun, updateWorkflowRun, follow-ups, agent runs, ping
 // All are async and all return COPIES. tests/storeContract.test.js checks
 // that every store follows these rules.
 
@@ -58,6 +59,16 @@ export function createMemoryStore(seed) {
     },
     async listWorkflowRuns() {
       return structuredClone(workflowRuns)
+    },
+    async insertWorkflowRun(run) {
+      workflowRuns.push(structuredClone(run))
+      return structuredClone(run)
+    },
+    async updateWorkflowRun(id, changes) {
+      const index = workflowRuns.findIndex((r) => r.id === id)
+      if (index === -1) return null
+      workflowRuns[index] = { ...workflowRuns[index], ...structuredClone(changes), id }
+      return structuredClone(workflowRuns[index])
     },
     async listFollowUps() {
       return structuredClone(followUps)

@@ -8,6 +8,7 @@
 import { Router } from 'express'
 import { pingStore, storeName } from '../services/leadStore.js'
 import { qualification } from '../services/qualificationService.js'
+import { automation } from '../services/automationService.js'
 
 const router = Router()
 
@@ -16,6 +17,7 @@ router.get('/', (req, res) => {
     status: 'ok',
     store: storeName,
     ai: qualification().model ?? 'disabled', // AI is optional: "disabled" does not make the server unhealthy
+    automation: automation().outboundEnabled ? 'n8n' : 'disabled', // also optional (Stage 6)
     uptimeSeconds: Math.round(process.uptime()), // how long the server has been running
     timestamp: new Date().toISOString(),
   })
