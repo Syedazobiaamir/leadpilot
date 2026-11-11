@@ -22,10 +22,12 @@ export const TABLES = {
       qualificationStatus: 'string?', aiReason: 'string?', aiModel: 'string?', qualifiedAt: 'string?',
       // Added in Stage 5: Validation Agent flag codes, comma-separated (e.g. "too_vague,all_caps").
       reviewFlags: 'string?',
+      // Added in Stage 7: the Idempotency-Key of the request that created the lead (never shown by the API).
+      submissionKey: 'string?',
     },
     // Columns added after the tab was first created. `npm run sheets:setup` may add these
     // to an existing tab (at the end of the header row) without touching any data.
-    addedLater: ['qualificationStatus', 'aiReason', 'aiModel', 'qualifiedAt', 'reviewFlags'],
+    addedLater: ['qualificationStatus', 'aiReason', 'aiModel', 'qualifiedAt', 'reviewFlags', 'submissionKey'],
   },
   activity: {
     sheet: 'Activity',
@@ -40,8 +42,10 @@ export const TABLES = {
       status: 'string', aiModel: 'string', createdAt: 'string', decidedAt: 'string?', editedAt: 'string?',
       // Added in Stage 6: when n8n reported it sent, and how ("simulated" = no real message left).
       sentAt: 'string?', sentVia: 'string?',
+      // Added in Stage 7: when n8n claimed it for sending ("sending"), and which n8n run did.
+      claimedAt: 'string?', claimedBy: 'string?',
     },
-    addedLater: ['sentAt', 'sentVia'],
+    addedLater: ['sentAt', 'sentVia', 'claimedAt', 'claimedBy'],
   },
   agentRuns: {
     // One row per agent run (Stage 5): the audit trail of what each agent did.
@@ -49,6 +53,16 @@ export const TABLES = {
     columns: {
       runId: 'string', leadId: 'string?', agent: 'string', status: 'string',
       durationMs: 'integer', errorKind: 'string?', detail: 'string?', startedAt: 'string',
+    },
+  },
+  recoveries: {
+    // Stage 7: one row per PROBLEM the system is trying to fix by itself (e.g. a failed AI
+    // qualification): how many tries, when the next one is due, and how it ended.
+    //   status: pending_retry → recovered | escalated (a person must look)
+    sheet: 'Recoveries',
+    columns: {
+      id: 'string', kind: 'string', targetId: 'string', status: 'string', attempts: 'integer',
+      nextRetryAt: 'string?', lastErrorKind: 'string?', lastError: 'string?', createdAt: 'string', updatedAt: 'string',
     },
   },
   workflowRuns: {

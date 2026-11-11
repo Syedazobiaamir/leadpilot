@@ -4,7 +4,7 @@
   "active": false,
   "nodes": [
     {
-      "id": "c930c871-1a79-45e1-a58f-c07c5a17802d",
+      "id": "fb848cb8-b93b-4797-923f-3cb9ebac0a3a",
       "name": "Hot lead event",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -19,7 +19,7 @@
         "responseMode": "onReceived",
         "options": {}
       },
-      "webhookId": "cb236c3d-1f30-46be-b9fc-891e3e570f29",
+      "webhookId": "300897c2-116c-4083-8ed8-a5b20f9c6fb4",
       "credentials": {
         "httpHeaderAuth": {
           "id": "lpAutomationKey1",
@@ -30,7 +30,7 @@
       "notesInFlow": true
     },
     {
-      "id": "83417420-267e-4e36-b230-386ea0df9de9",
+      "id": "ed626ef5-d925-4878-819f-ec3a39605aaf",
       "name": "Check the event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -41,13 +41,13 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Never trust incoming data, even from our own backend: check it before using it.\nconst event = $input.first().json.body || {};\nconst d = event.data || {};\nconst text = (t, max) => String(t ?? '').replace(/\\s+/g, ' ').trim().slice(0, max);\nif (event.type !== 'lead.qualified') throw new Error('Unexpected event type: ' + text(event.type, 40));\nif (!/^LD-[A-Za-z0-9-]{1,40}$/.test(d.leadId || '')) throw new Error('The event has no valid leadId');\nif (d.classification !== 'Hot') throw new Error('Only Hot leads get an alert');\n\n// First name only: no phone, email or address is ever in the event.\nlet message = 'HOT LEAD ' + d.leadId + ': ' + text(d.firstName, 40) + ', ' + text(d.serviceType, 40) + ', timeline ' + text(d.timeline, 30) + ', score ' + text(d.score, 5) + '. Call them first.';\nif (d.reason) message += ' Why: ' + text(d.reason, 200);\n\nreturn [{ json: { leadId: d.leadId, message: message.slice(0, 500) } }];\n"
+        "jsCode": "// Never trust incoming data, even from our own backend: check it before using it.\nconst event = $input.first().json.body || {};\nconst d = event.data || {};\nconst text = (t, max) => String(t ?? '').replace(/\\s+/g, ' ').trim().slice(0, max);\nif (event.type !== 'lead.qualified') throw new Error('Unexpected event type - ' + text(event.type, 40));\nif (!/^LD-[A-Za-z0-9-]{1,40}$/.test(d.leadId || '')) throw new Error('The event has no valid leadId');\nif (d.classification !== 'Hot') throw new Error('Only Hot leads get an alert');\n\n// First name only: no phone, email or address is ever in the event.\nlet message = 'HOT LEAD ' + d.leadId + ': ' + text(d.firstName, 40) + ', ' + text(d.serviceType, 40) + ', timeline ' + text(d.timeline, 30) + ', score ' + text(d.score, 5) + '. Call them first.';\nif (d.reason) message += ' Why: ' + text(d.reason, 200);\n\nreturn [{ json: { leadId: d.leadId, message: message.slice(0, 500) } }];\n"
       },
       "notes": "Checks the event, then writes the alert text.",
       "notesInFlow": true
     },
     {
-      "id": "617a2e68-3eda-4352-897c-868ab0328d49",
+      "id": "2221616d-b9a1-4f6c-98cf-108d2c97b2ef",
       "name": "Alert on the dashboard",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -64,6 +64,12 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), type: 'automation', message: $('Check the event').item.json.message, leadId: $('Check the event').item.json.leadId }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -80,12 +86,29 @@
       "notesInFlow": true
     },
     {
-      "id": "e50a59f3-2ef6-4fd6-8881-3bbd98ae1042",
+      "id": "8847ace6-c208-4bf8-91c8-77511697c154",
+      "name": "Check: Alert on the dashboard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Alert on the dashboard\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
+    },
+    {
+      "id": "946fefa9-2018-4589-8f77-6df86bbdea32",
       "name": "Record the run",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        660,
+        880,
         0
       ],
       "parameters": {
@@ -97,6 +120,12 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), workflow: 'Hot-lead alert', leadId: $('Check the event').item.json.leadId, status: 'success', attempts: 1, maxAttempts: 3 }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -109,6 +138,23 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000
+    },
+    {
+      "id": "ab9da918-214d-4128-b563-dc07a9702224",
+      "name": "Check: Record the run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        990,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Record the run\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -138,7 +184,29 @@
       "main": [
         [
           {
+            "node": "Check: Alert on the dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Alert on the dashboard": {
+      "main": [
+        [
+          {
             "node": "Record the run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record the run": {
+      "main": [
+        [
+          {
+            "node": "Check: Record the run",
             "type": "main",
             "index": 0
           }

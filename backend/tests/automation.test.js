@@ -279,12 +279,15 @@ describe('POST /api/automation/activity (n8n writes an alert for the dashboard)'
 })
 
 // ---------------------------------------------------------------------------------------
-describe('POST /api/automation/followups/:id/mark-sent (n8n says it sent a follow-up)', () => {
+describe('claim + mark-sent (n8n sends a follow-up: approved → sending → sent)', () => {
   const followUp = (id, status) => ({
     id, leadId: 'LD-1001', channel: 'email', subject: 'Your roof', body: 'Hi Maria, thanks for reaching out.', status,
     aiModel: 'gemini-test', createdAt: '2026-11-08T10:00:00.000Z', decidedAt: null, editedAt: null, sentAt: null, sentVia: null,
+    claimedAt: null, claimedBy: null,
   })
+  const claim = (id, executionId = '41') => withKey(request(app).post(`/api/automation/followups/${id}/claim`)).send({ executionId })
   const markSent = (id, body = { via: 'simulated' }) => withKey(request(app).post(`/api/automation/followups/${id}/mark-sent`)).send(body)
+  const statusOf = async (id) => (await store.listFollowUps()).find((f) => f.id === id).status
   const sentEvents = async (id) => (await store.listActivity()).filter((e) => e.message.startsWith(`Follow-up ${id} sent`))
 
   beforeEach(async () => {
@@ -292,7 +295,53 @@ describe('POST /api/automation/followups/:id/mark-sent (n8n says it sent a follo
     for (const [id, status] of [['FU-A', 'approved'], ['FU-D', 'draft'], ['FU-R', 'rejected']]) await store.insertFollowUp(followUp(id, status))
   })
 
-  it('approved → sent, with sentAt, sentVia "simulated" and an honest audit event', async () => {
+  it('claim: approved → "sending", remembering which n8n run claimed it', async () => {
+    const res = await claim('FU-A', '41')
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ data: { id: 'FU-A', leadId: 'LD-1001', status: 'sending' }, claimed: true })
+    expect((await store.listFollowUps()).find((f) => f.id === 'FU-A')).toMatchObject({ status: 'sending', claimedBy: '41' })
+  })
+
+  it('a DIFFERENT run (duplicate event) gets claimed: false, so it must not send', async () => {
+    await claim('FU-A', '41')
+    const second = await claim('FU-A', '42')
+    expect(second.status).toBe(200)
+    expect(second.body.claimed).toBe(false)
+    expect((await store.listFollowUps()).find((f) => f.id === 'FU-A').claimedBy).toBe('41')
+  })
+
+  it('the SAME run retrying its claim (e.g. the answer got lost) still gets claimed: true', async () => {
+    await claim('FU-A', '41')
+    expect((await claim('FU-A', '41')).body.claimed).toBe(true)
+  })
+
+  it('two runs claiming at the same moment: exactly one wins', async () => {
+    const [a, b] = await Promise.all([claim('FU-A', '41'), claim('FU-A', '42')])
+    expect([a.body.claimed, b.body.claimed].sort()).toEqual([false, true])
+  })
+
+  it('an already SENT follow-up cannot be claimed again (claimed: false)', async () => {
+    await claim('FU-A')
+    await markSent('FU-A')
+    expect((await claim('FU-A', '99')).body.claimed).toBe(false)
+  })
+
+  it.each([['FU-D', 'draft'], ['FU-R', 'rejected']])('claim: 409 FOLLOWUP_NOT_APPROVED for a %s follow-up (%s)', async (id) => {
+    const res = await claim(id)
+    expect(res.status).toBe(409)
+    expect(res.body.error.code).toBe('FOLLOWUP_NOT_APPROVED')
+    expect(await statusOf(id)).not.toBe('sending')
+  })
+
+  it('claim validates its input and the ID', async () => {
+    expect((await claim('FU-A', '../x')).body.error.code).toBe('VALIDATION_ERROR')
+    expect((await claim('FU-NOPE')).body.error.code).toBe('FOLLOWUP_NOT_FOUND')
+    expect((await claim('LD-1001')).body.error.code).toBe('INVALID_FOLLOWUP_ID')
+    expect(await statusOf('FU-A')).toBe('approved')
+  })
+
+  it('mark-sent: sending → sent, with sentAt, sentVia "simulated" and an honest audit event', async () => {
+    await claim('FU-A')
     const res = await markSent('FU-A')
     expect(res.status).toBe(200)
     expect(res.body.alreadySent).toBe(false)
@@ -302,7 +351,16 @@ describe('POST /api/automation/followups/:id/mark-sent (n8n says it sent a follo
     expect(event.message).toContain('SIMULATED')
   })
 
-  it('is idempotent: a second call changes nothing and writes no second audit event', async () => {
+  it('mark-sent without a claim first: 409 FOLLOWUP_NOT_CLAIMED (nothing can skip the lock)', async () => {
+    const res = await markSent('FU-A')
+    expect(res.status).toBe(409)
+    expect(res.body.error.code).toBe('FOLLOWUP_NOT_CLAIMED')
+    expect(await statusOf('FU-A')).toBe('approved')
+    expect((await markSent('FU-D')).body.error.code).toBe('FOLLOWUP_NOT_CLAIMED')
+  })
+
+  it('mark-sent is idempotent: a second call changes nothing and writes no second audit event', async () => {
+    await claim('FU-A')
     const first = await markSent('FU-A')
     const second = await markSent('FU-A')
     expect(second.status).toBe(200)
@@ -311,42 +369,35 @@ describe('POST /api/automation/followups/:id/mark-sent (n8n says it sent a follo
     expect(await sentEvents('FU-A')).toHaveLength(1)
   })
 
-  it('two calls at the same moment are recorded once', async () => {
+  it('two mark-sent calls at the same moment are recorded once', async () => {
+    await claim('FU-A')
     const [a, b] = await Promise.all([markSent('FU-A'), markSent('FU-A')])
     expect([a.status, b.status]).toEqual([200, 200])
     expect(await sentEvents('FU-A')).toHaveLength(1)
   })
 
-  it.each([['FU-D', 'draft'], ['FU-R', 'rejected']])('409 FOLLOWUP_NOT_APPROVED for a %s follow-up (%s)', async (id) => {
-    const res = await markSent(id)
-    expect(res.status).toBe(409)
-    expect(res.body.error.code).toBe('FOLLOWUP_NOT_APPROVED')
-    expect((await store.listFollowUps()).find((f) => f.id === id).status).not.toBe('sent')
-  })
-
   it('404 / 400 for unknown or malformed IDs, 400 for an unknown delivery method', async () => {
     expect((await markSent('FU-NOPE')).body.error.code).toBe('FOLLOWUP_NOT_FOUND')
     expect((await markSent('LD-1001')).body.error.code).toBe('INVALID_FOLLOWUP_ID')
+    await claim('FU-A')
     const res = await markSent('FU-A', { via: 'email' })
     expect(res.status).toBe(400)
     expect(res.body.error.code).toBe('VALIDATION_ERROR')
-    expect((await store.listFollowUps()).find((f) => f.id === 'FU-A').status).toBe('approved')
+    expect(await statusOf('FU-A')).toBe('sending')
   })
 
-  it('GET /api/automation/followups/:id: status only (checked BEFORE delivering), no message or contact data', async () => {
+  it('GET /api/automation/followups/:id: status only, no message or contact data', async () => {
     const res = await withKey(request(app).get('/api/automation/followups/FU-A'))
     expect(res.status).toBe(200)
     expect(res.body.data).toEqual({ id: 'FU-A', leadId: 'LD-1001', status: 'approved', sentAt: null })
-    await markSent('FU-A')
-    expect((await withKey(request(app).get('/api/automation/followups/FU-A'))).body.data.status).toBe('sent')
     expect((await withKey(request(app).get('/api/automation/followups/FU-NOPE'))).status).toBe(404)
     expect((await withKey(request(app).get('/api/automation/followups/bad'))).status).toBe(400)
     expect((await request(app).get('/api/automation/followups/FU-A')).status).toBe(401)
   })
 
-  it('needs the automation key (the dashboard cannot mark things sent)', async () => {
-    const res = await request(app).post('/api/automation/followups/FU-A/mark-sent').send({ via: 'simulated' })
-    expect(res.status).toBe(401)
+  it('needs the automation key (the dashboard cannot claim or mark things sent)', async () => {
+    expect((await request(app).post('/api/automation/followups/FU-A/claim').send({ executionId: '1' })).status).toBe(401)
+    expect((await request(app).post('/api/automation/followups/FU-A/mark-sent').send({ via: 'simulated' })).status).toBe(401)
   })
 })
 

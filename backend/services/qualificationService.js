@@ -21,14 +21,16 @@ import { createToolRegistry } from '../agents/toolRegistry.js'
 import { createTools } from '../agents/tools.js'
 import { runAgent } from '../agents/runAgent.js'
 import { automation } from './automationService.js'
+import { recovery } from './recoveryService.js'
 
 /**
  * ai:     a Gemini client ({ model, generateJson }), or null when AI is disabled
  * store:  the lead store (findLeadById, updateLead, insertActivity, insertAgentRun)
  * logger, now: injectable for tests
  * getAutomation: returns the CURRENT automation service (Stage 6; tests can swap it)
+ * getRecovery:   returns the CURRENT recovery service (Stage 7; tests can swap it)
  */
-export function createQualificationService({ ai, store = leadStore, logger = defaultLogger, now = () => new Date(), getAutomation = automation }) {
+export function createQualificationService({ ai, store = leadStore, logger = defaultLogger, now = () => new Date(), getAutomation = automation, getRecovery = recovery }) {
   const running = new Map() // lead ID → promise of the qualification in progress
   const agent = ai ? createQualificationAgent({ ai, now }) : null
   const registry = createToolRegistry(createTools({ store, now }), { logger })
@@ -43,12 +45,17 @@ export function createQualificationService({ ai, store = leadStore, logger = def
     if (!ai) throw aiDisabledError()
     const outcome = await runAgent({ agent, input: { leadId: id }, registry, store, logger, now })
     if (outcome.ok) {
+      // Stage 7: if this lead had an open recovery record, it is now recovered. Never throws.
+      await getRecovery().recordSuccess({ kind: 'qualification', targetId: id })
       // Stage 6: a Hot lead triggers the n8n alert (WF1, shown on the dashboard). Background, never throws, and does
       // nothing for Warm/Cold leads or when automation is off.
       getAutomation().notifyLeadQualified(outcome.result.lead)
       return outcome.result.lead
     }
     if (outcome.error instanceof AiError) {
+      // Stage 7: open/update its recovery record; the retry policy decides when to try again
+      // (or to escalate). Never throws.
+      await getRecovery().recordFailure({ kind: 'qualification', targetId: id, error: outcome.error })
       throw new AppError(503, 'AI_UNAVAILABLE', 'AI qualification failed. The lead was saved and can be qualified again later.')
     }
     throw outcome.error // 404, storage problems (503), permission errors and bugs keep their own meaning
@@ -73,6 +80,9 @@ export function createQualificationService({ ai, store = leadStore, logger = def
     model: ai?.model ?? null,
 
     qualifyNow,
+
+    /** True while a qualification of this lead is running (the Recovery Agent must not start another). */
+    isRunning: (id) => running.has(id),
 
     /**
      * Starts qualification in the background (at most one job per lead). Does nothing when AI is

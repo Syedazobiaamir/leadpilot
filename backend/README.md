@@ -117,11 +117,11 @@ It checks 23 behaviours (24 through the proxy, including the app page) and exits
 ⚠ Each run **creates one test lead** (named "Smoke Test"). With `DATA_STORE=sheets` that lead is written to the real spreadsheet. Only use it on demo data, and delete the row afterwards if you like.
 
 ## Known limitations
-- **AI:** the Gemini free tier allows **20 requests/day** (gemini-2.5-flash). After that, AI runs fail with `quota_exhausted`. No automatic AI retries yet (Stage 7). See `docs/ai-qualification.md`.
-- **Partial writes:** creating a lead writes the lead row, then its activity row. Sheets has no transactions. If the second write fails, the client sees `503` although the lead was saved. A write that times out may also have been saved. Stage 7 adds idempotency keys and recovery.
-- **Duplicate race:** the duplicate check is check-then-insert. With Google Sheets, two simultaneous identical requests could both pass (Stage 7).
+- **AI:** the Gemini free tier allows **20 requests/day** (gemini-2.5-flash). After that, AI runs fail with `quota_exhausted`. Automatic AI retries (Stage 7) are capped at 3 per sweep and 5 per day. See `docs/ai-qualification.md` and `docs/self-healing.md`.
+- **Partial writes:** Sheets has no transactions. A lead saved without its activity row still returns `201` (the gap is logged). A lead write that timed out may have been saved: the form's retry with the same `Idempotency-Key` returns it instead of a duplicate.
+- **Duplicate protection is in-process:** creates run one at a time inside ONE server process. Several instances (serverless) would need a database-level lock (Stage 9).
 - **Scale:** each uncached read loads a whole tab. That is fine for hundreds of leads, slow for many thousands.
-- No automatic retries yet: temporary Google errors return `503` immediately (Stage 7).
+- A temporary Google error still returns `503` to the caller right away; the self-healing (Stage 7) retries background work (AI, n8n hand-offs), not the caller's request. `/api/health/ready` reads 7 tabs per call: don't poll it fast (60 reads/minute limit).
 - Storage error log lines don't include the `requestId`. Match them by time with the `request failed` line (to improve in Stage 8).
 - No authentication, rate limiting or security headers yet (Stage 8).
 - No CORS setup: in development the Vite proxy makes it unnecessary. Deployment is decided in Stage 9.

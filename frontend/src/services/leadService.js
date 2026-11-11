@@ -24,7 +24,7 @@ export class ApiError extends Error {
  * Every kind of failure becomes an ApiError with a clear message:
  * network down, timeout, error response, or a response we can't read.
  */
-async function request(path, { method = 'GET', body } = {}) {
+async function request(path, { method = 'GET', body, headers = {} } = {}) {
   let res
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -32,6 +32,7 @@ async function request(path, { method = 'GET', body } = {}) {
       headers: {
         Accept: 'application/json',
         ...(body !== undefined && { 'Content-Type': 'application/json' }),
+        ...headers,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       // Give up after 10 seconds instead of waiting forever.
@@ -97,6 +98,11 @@ export async function getWorkflowRuns() {
 }
 
 /** Agent runs (Stage 5): the REAL record of what each agent did, newest first. */
+/** Stage 7: self-healing records (what the Recovery Agent is fixing, fixed, or escalated). */
+export async function getRecoveries() {
+  return (await request('/recoveries')).data
+}
+
 export async function getAgentRuns() {
   return (await request('/agent-runs')).data
 }
@@ -152,9 +158,15 @@ export async function requalifyLead(id) {
  *   { success: true, lead }  or  { success: false, errors: { field: message } | { form: message } }
  * The server is the final judge: it validates again and checks for duplicates.
  */
-export async function createLead(input) {
+/**
+ * idempotencyKey (Stage 7): the same random key for every try of ONE form submission. If an earlier
+ * try did reach the server (only the answer was lost), the server returns that lead again
+ * instead of creating a second one or answering "duplicate".
+ */
+export async function createLead(input, { idempotencyKey } = {}) {
   try {
-    const body = await request('/leads', { method: 'POST', body: input })
+    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}
+    const body = await request('/leads', { method: 'POST', body: input, headers })
     return { success: true, lead: body.data }
   } catch (err) {
     if (!(err instanceof ApiError)) throw err

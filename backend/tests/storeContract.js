@@ -13,14 +13,14 @@ export const contractSeed = {
       serviceType: 'Roofing', timeline: 'ASAP', message: 'Roof leak after storm.', source: 'Website form',
       classification: 'Hot', score: 90, status: 'New', createdAt: '2026-11-01T10:00:00.000Z',
       qualificationStatus: 'qualified', aiReason: 'Roof leak after storm.', aiModel: 'simulated', qualifiedAt: '2026-11-01T10:00:04.000Z',
-      reviewFlags: null,
+      reviewFlags: null, submissionKey: null,
     },
     {
       id: 'LD-2002', name: 'Ben Okafor', phone: '5125550102', email: 'ben@example.com', zip: '78701',
       serviceType: 'HVAC', timeline: '1-3 months', message: 'Heat pump quote.', source: 'Referral',
       classification: null, score: null, status: 'New', createdAt: '2026-11-02T10:00:00.000Z',
       qualificationStatus: 'pending', aiReason: null, aiModel: null, qualifiedAt: null,
-      reviewFlags: 'too_vague',
+      reviewFlags: 'too_vague', submissionKey: 'sub-key-2002',
     },
   ],
   activity: [
@@ -30,11 +30,18 @@ export const contractSeed = {
   followUps: [
     {
       id: 'FU-1', leadId: 'LD-2001', channel: 'email', subject: 'About your roof leak', body: 'Hi Ana, thanks for reaching out about the roof leak. Our team will call you to arrange an inspection.',
-      status: 'draft', aiModel: 'gemini-test', createdAt: '2026-11-01T10:00:06.000Z', decidedAt: null, editedAt: null, sentAt: null, sentVia: null,
+      status: 'draft', aiModel: 'gemini-test', createdAt: '2026-11-01T10:00:06.000Z', decidedAt: null, editedAt: null, sentAt: null, sentVia: null, claimedAt: null, claimedBy: null,
     },
   ],
   agentRuns: [
     { runId: 'AR-1', leadId: 'LD-2001', agent: 'qualification', status: 'success', durationMs: 1200, errorKind: null, detail: 'Hot (score 90)', startedAt: '2026-11-01T10:00:02.000Z' },
+  ],
+  recoveries: [
+    {
+      id: 'RC-1', kind: 'qualification', targetId: 'LD-2002', status: 'pending_retry', attempts: 1,
+      nextRetryAt: '2026-11-02T10:05:00.000Z', lastErrorKind: 'timeout', lastError: 'Gemini did not respond in time.',
+      createdAt: '2026-11-02T10:00:00.000Z', updatedAt: '2026-11-02T10:00:00.000Z',
+    },
   ],
   workflowRuns: [
     {
@@ -49,7 +56,7 @@ const newLead = {
   serviceType: 'Solar', timeline: 'Just researching', message: 'Solar panel costs?', source: 'Website form',
   classification: null, score: null, status: 'New', createdAt: '2026-11-03T10:00:00.000Z',
   qualificationStatus: 'pending', aiReason: null, aiModel: null, qualifiedAt: null,
-  reviewFlags: null,
+  reviewFlags: null, submissionKey: null,
 }
 
 /**
@@ -132,6 +139,22 @@ export function runStoreContract(name, makeStore) {
       const [run] = await store.listWorkflowRuns()
       expect(run).toEqual(contractSeed.workflowRuns[0])
       expect(typeof run.attempts).toBe('number')
+    })
+
+    it('lists, inserts and updates recoveries (Stage 7), with numbers and nulls intact', async () => {
+      expect(await store.listRecoveries()).toEqual(contractSeed.recoveries)
+      const escalated = {
+        id: 'RC-2', kind: 'qualification', targetId: 'LD-2001', status: 'escalated', attempts: 4,
+        nextRetryAt: null, lastErrorKind: 'auth', lastError: '=HYPERLINK("x")', createdAt: '2026-11-03T10:00:00.000Z', updatedAt: '2026-11-03T10:00:00.000Z',
+      }
+      await store.insertRecovery(escalated)
+      expect((await store.listRecoveries()).find((r) => r.id === 'RC-2')).toEqual(escalated) // formula-like text stays text
+
+      const done = await store.updateRecovery('RC-1', { status: 'recovered', attempts: 2, nextRetryAt: null, id: 'RC-HACK' })
+      expect(done).toEqual({ ...contractSeed.recoveries[0], status: 'recovered', attempts: 2, nextRetryAt: null })
+      expect(typeof done.attempts).toBe('number')
+      expect(await store.updateRecovery('RC-404', { status: 'recovered' })).toBeNull()
+      expect((await store.listRecoveries()).find((r) => r.id === 'RC-2').status).toBe('escalated') // untouched
     })
 
     it('inserts and updates workflow runs (Stage 6: real n8n runs)', async () => {

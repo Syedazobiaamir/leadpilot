@@ -4,7 +4,7 @@
   "active": false,
   "nodes": [
     {
-      "id": "bc3098e2-add2-495d-b6ea-78388b1007c7",
+      "id": "c07c9428-57c1-41ba-a212-2026d6da050c",
       "name": "A LeadPilot workflow failed",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
@@ -15,7 +15,7 @@
       "parameters": {}
     },
     {
-      "id": "29328d63-7874-49d3-aeb5-de0aa7dfba6d",
+      "id": "dc32893b-74fc-4e71-96cc-203c0845c19f",
       "name": "Prepare the escalation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -26,13 +26,13 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// The Error Trigger gives us the failed run: which workflow, which step, what error.\nconst e = $input.first().json;\nconst ex = e.execution || {};\nconst wf = e.workflow || {};\nconst names = { lpWf1HotLeadAlrt: 'Hot-lead alert', lpWf2SendFollow1: 'Send approved follow-up', lpWf3HealthMon01: 'Health monitor' };\n\n// Error texts can contain URLs with secrets in them: hide them, keep it short.\nconst clean = (t) => String(t || 'Unknown error').replace(/https?:\\/\\/\\S+/gi, '[URL hidden]').replace(/\\s+/g, ' ').trim().slice(0, 250);\n\nconst workflow = names[wf.id] || String(wf.name || 'Unknown workflow').slice(0, 80);\nconst failedNode = String(ex.lastNodeExecuted || 'unknown step').slice(0, 60);\nconst error = clean(ex.error && ex.error.message);\n// A trigger failure has no execution ID: make one, so the run can still be recorded.\nconst executionId = String(ex.id || 'trigger-' + Date.now());\nconst message = 'NEEDS A PERSON: ' + workflow + ' failed at \"' + failedNode + '\": ' + error + (ex.id ? ' (n8n run #' + ex.id + ')' : '');\n\nreturn [{ json: { workflow, failedNode, error, executionId, message, leadId: null } }];\n"
+        "jsCode": "// The Error Trigger gives us the failed run: which workflow, which step, what error.\nconst e = $input.first().json;\nconst ex = e.execution || {};\nconst wf = e.workflow || {};\n\n// Only LeadPilot workflows (IDs starting with \"lp\") are escalated. Clicking \"Execute workflow\" on\n// THIS workflow makes n8n send fake sample data (\"Example Workflow\"), which must never reach the\n// dashboard as a real problem. Other workflows in this n8n are not ours either.\nif (!String(wf.id || '').startsWith('lp')) return [];\nconst names = { lpWf1HotLeadAlrt: 'Hot-lead alert', lpWf2SendFollow1: 'Send approved follow-up', lpWf3HealthMon01: 'Health monitor', lpWf5RecoverySwp: 'Recovery sweep' };\n\n// Error texts can contain URLs with secrets in them: hide them, keep it short.\nconst clean = (t) => String(t || 'Unknown error').replace(/https?:\\/\\/\\S+/gi, '[URL hidden]').replace(/\\s+/g, ' ').trim().slice(0, 250);\n\nconst workflow = names[wf.id] || String(wf.name || 'Unknown workflow').slice(0, 80);\nconst failedNode = String(ex.lastNodeExecuted || 'unknown step').slice(0, 60);\nconst error = clean(ex.error && ex.error.message);\n// A trigger failure has no execution ID: make one, so the run can still be recorded.\nconst executionId = String(ex.id || 'trigger-' + Date.now());\nconst message = 'NEEDS A PERSON: ' + workflow + ' failed at \"' + failedNode + '\": ' + error + (ex.id ? ' (n8n run #' + ex.id + ')' : '');\n\nreturn [{ json: { workflow, failedNode, error, executionId, message, leadId: null } }];\n"
       },
       "notes": "Runs when any LeadPilot workflow fails (their settings point here).",
       "notesInFlow": true
     },
     {
-      "id": "8c678d20-48e8-47f1-8699-ca322ca40d61",
+      "id": "d7ee37c1-1fa9-4018-97da-b2a195f960b6",
       "name": "Escalate on the dashboard",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -47,8 +47,14 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), type: 'escalation', message: $('Prepare the escalation').item.json.message, leadId: $('Prepare the escalation').item.json.leadId }) }}",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), type: 'escalation', message: $('Prepare the escalation').item.json.message, leadId: null }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -61,12 +67,12 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 5000,
-      "notes": "Shows the escalation on the dashboard. Fails quietly when the backend itself is down (checked at the end).",
-      "notesInFlow": true,
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "Shows the escalation on the dashboard. Checked at the end (the backend may be the thing that is down).",
+      "notesInFlow": true
     },
     {
-      "id": "70a0eef8-4bb1-464b-bf93-e327e91d0cf1",
+      "id": "9dcf42bc-c304-43d9-9bc5-b6af83907bdd",
       "name": "Record the escalation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -83,6 +89,12 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ executionId: $('Prepare the escalation').item.json.executionId, workflow: $('Prepare the escalation').item.json.workflow, leadId: null, status: 'escalated', attempts: 1, maxAttempts: 1, lastError: $('Prepare the escalation').item.json.failedNode + ': ' + $('Prepare the escalation').item.json.error }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -100,7 +112,7 @@
       "notesInFlow": true
     },
     {
-      "id": "8caa2fb5-ce47-4ff8-81da-710aba42495b",
+      "id": "46eb3a5f-449d-4329-b211-8dbdec3c4dee",
       "name": "Did the dashboard get it?",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -111,7 +123,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// If the backend is down (e.g. a WF3 outage), nothing could be written. Fail THIS run on\n// purpose, so the escalation is at least visible (red) in n8n > Executions. An error\n// workflow never triggers itself, so this cannot loop.\nif ($('Escalate on the dashboard').first().json.error) {\n  throw new Error('Could not reach the backend: this escalation is ONLY visible here in n8n. ' + $('Prepare the escalation').first().json.message);\n}\nreturn $input.all();\n"
+        "jsCode": "// If the backend is down (e.g. a WF3 outage) or refused it, nothing was written. Fail THIS run on\n// purpose, so the escalation is at least visible (red) in n8n > Executions. An error\n// workflow never triggers itself, so this cannot loop.\nconst r = $('Escalate on the dashboard').first().json;\nconst ok = !r.error && r.statusCode >= 200 && r.statusCode < 300;\nif (!ok) {\n  throw new Error('Could not reach the backend (' + (r.statusCode ? 'HTTP ' + r.statusCode : 'no answer') + ') - this escalation is ONLY visible here in n8n. ' + $('Prepare the escalation').first().json.message.replace(/: /g, ' - '));\n}\nreturn $input.all();\n"
       },
       "notes": "Makes an escalation that could not reach the dashboard visible here instead.",
       "notesInFlow": true

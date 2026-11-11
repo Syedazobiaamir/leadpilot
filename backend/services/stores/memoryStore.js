@@ -3,7 +3,7 @@
 //
 // Every store (memory, sheets) has the SAME functions:
 //   listLeads, findLeadById, insertLead, updateLead, listActivity, insertActivity,
-//   listWorkflowRuns, insertWorkflowRun, updateWorkflowRun, follow-ups, agent runs, ping
+//   listWorkflowRuns, insertWorkflowRun, updateWorkflowRun, follow-ups, agent runs, recoveries, ping
 // All are async and all return COPIES. tests/storeContract.test.js checks
 // that every store follows these rules.
 
@@ -17,6 +17,7 @@ export function createMemoryStore(seed) {
   let workflowRuns = []
   let agentRuns = []
   let followUps = []
+  let recoveries = []
 
   // structuredClone makes deep copies, so the store and its callers never share objects.
   function reset() {
@@ -25,6 +26,7 @@ export function createMemoryStore(seed) {
     workflowRuns = structuredClone(seed.workflowRuns ?? [])
     agentRuns = structuredClone(seed.agentRuns ?? [])
     followUps = structuredClone(seed.followUps ?? [])
+    recoveries = structuredClone(seed.recoveries ?? [])
   }
   reset()
 
@@ -82,6 +84,19 @@ export function createMemoryStore(seed) {
       if (index === -1) return null
       followUps[index] = { ...followUps[index], ...structuredClone(changes), id }
       return structuredClone(followUps[index])
+    },
+    async listRecoveries() {
+      return structuredClone(recoveries)
+    },
+    async insertRecovery(recovery) {
+      recoveries.push(structuredClone(recovery))
+      return structuredClone(recovery)
+    },
+    async updateRecovery(id, changes) {
+      const index = recoveries.findIndex((r) => r.id === id)
+      if (index === -1) return null
+      recoveries[index] = { ...recoveries[index], ...structuredClone(changes), id }
+      return structuredClone(recoveries[index])
     },
     async listAgentRuns() {
       return structuredClone(agentRuns)

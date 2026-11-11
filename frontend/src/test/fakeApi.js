@@ -56,6 +56,9 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
     agentRuns: [],
     followUps: [],
     pendingDrafts: new Set(), // lead IDs whose AI follow-up draft appears at the next GET
+    idempotencyKeys: [], // the Idempotency-Key of every POST /api/leads (Stage 7)
+    recoveries: [], // Stage 7 self-healing records
+    loseNextAnswer: false, // true: the next lead is saved, but its answer is lost
   }
 
   // Simulates the server's background AI job finishing.
@@ -81,6 +84,9 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
     }
     if (method === 'GET' && path === '/api/activity') {
       return jsonResponse({ data: [...db.activity].sort(newestFirst('timestamp')) })
+    }
+    if (method === 'GET' && path === '/api/recoveries') {
+      return jsonResponse({ data: [...db.recoveries].sort(newestFirst('updatedAt')), count: db.recoveries.length })
     }
     if (method === 'GET' && path === '/api/agent-runs') {
       return jsonResponse({ data: [...db.agentRuns].sort(newestFirst('startedAt')), count: db.agentRuns.length })
@@ -127,6 +133,10 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
       return jsonResponse({ data: [...db.workflowRuns].sort(newestFirst('startedAt')) })
     }
     if (method === 'POST' && path === '/api/leads') {
+      const key = options.headers?.['Idempotency-Key']
+      db.idempotencyKeys.push(key ?? null)
+      const earlier = key && db.leads.find((l) => l.submissionKey === key)
+      if (earlier) return jsonResponse({ data: earlier }, 201) // a retry: the same lead again
       const result = validateLead(JSON.parse(options.body))
       if (!result.success) {
         return jsonResponse({ error: { code: 'VALIDATION_ERROR', message: 'Invalid', details: result.errors } }, 400)
@@ -139,7 +149,12 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
         id: `LD-${1001 + db.leads.length}`, ...result.data, source: 'Website form', classification: null, score: null, status: 'New', createdAt: now,
         qualificationStatus: 'pending', aiReason: null, aiModel: null, qualifiedAt: null,
       }
-      db.leads.push(lead)
+      db.leads.push({ ...lead, submissionKey: key ?? null })
+      if (db.loseNextAnswer) {
+        // Simulates a bad connection: the server SAVED the lead, but the answer never arrives.
+        db.loseNextAnswer = false
+        throw new TypeError('Failed to fetch')
+      }
       if (ai !== 'disabled') db.pendingAi.add(lead.id)
       db.activity.push({ id: `EV-${lead.id}`, type: 'lead', message: `New lead ${lead.id} captured`, leadId: lead.id, timestamp: now })
       return jsonResponse({ data: lead }, 201)

@@ -61,6 +61,7 @@ async function main() {
   check('GET /api/leads returns a list', before.status === 200 && Array.isArray(before.json?.data), `count=${startCount}`)
   check('GET /api/activity works', (await call('/api/activity')).status === 200)
   check('GET /api/workflow-runs works', (await call('/api/workflow-runs')).status === 200)
+  check('GET /api/recoveries works (Stage 7)', Array.isArray((await call('/api/recoveries')).json?.data))
   check('Unknown lead → 404 LEAD_NOT_FOUND', (await call('/api/leads/LD-999999')).json?.error?.code === 'LEAD_NOT_FOUND')
   check('Malformed ID → 400 INVALID_LEAD_ID', (await call('/api/leads/abc')).json?.error?.code === 'INVALID_LEAD_ID')
   check('Unknown route → 404 NOT_FOUND', (await call('/api/nope')).json?.error?.code === 'NOT_FOUND')
@@ -74,11 +75,16 @@ async function main() {
   check('/api/automation/* with a wrong key is refused', wrongKey.status === 401 || wrongKey.status === 503, `status=${wrongKey.status}`)
 
   // --- Create
-  const created = await call('/api/leads', { method: 'POST', body: { ...lead, status: 'Won', classification: 'Hot' } })
+  const key = `smoke-${stamp}` // Stage 7: Idempotency-Key, so a retried submission returns the same lead
+  const created = await call('/api/leads', { method: 'POST', body: { ...lead, status: 'Won', classification: 'Hot' }, headers: { 'Idempotency-Key': key } })
   const newId = created.json?.data?.id
   check('POST valid lead → 201', created.status === 201, `status=${created.status} id=${newId}`)
   check('Client cannot set status/classification', created.json?.data?.status === 'New' && created.json?.data?.classification === null)
   check('Location header points to new lead', created.headers.get('location') === `/api/leads/${newId}`)
+  const replay = await call('/api/leads', { method: 'POST', body: lead, headers: { 'Idempotency-Key': key } })
+  check('Same Idempotency-Key again → 201 replay of the SAME lead (no duplicate)',
+    replay.status === 201 && replay.headers.get('idempotent-replayed') === 'true' && replay.json?.data?.id === newId, `status=${replay.status}`)
+  check('The API never shows the idempotency key', !JSON.stringify(created.json).includes(key))
   check('GET /api/leads/:id finds the new lead', (await call(`/api/leads/${newId}`)).status === 200)
   const activity = await call('/api/activity')
   const event = activity.json?.data?.find((e) => e.leadId === newId)

@@ -28,7 +28,7 @@ export function createApp() {
   app.use('/api/leads', leadsRoutes)
   app.use('/api/followups', followUpRoutes)
   app.use('/api/automation', automationRoutes) // only n8n (needs the x-automation-key header)
-  app.use('/api', monitoringRoutes) // /api/activity, /api/workflow-runs and /api/agent-runs
+  app.use('/api', monitoringRoutes) // /api/activity, /api/workflow-runs, /api/agent-runs and /api/recoveries
 
   // 5. Nothing matched: 404. Then turn every error into a clean JSON response.
   app.use(notFound)

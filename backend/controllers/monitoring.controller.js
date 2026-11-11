@@ -14,3 +14,8 @@ export async function listAgentRuns(req, res) {
   const runs = await monitoringService.getAgentRuns()
   res.json({ data: runs, count: runs.length })
 }
+
+export async function listRecoveries(req, res) {
+  const records = await monitoringService.getRecoveries()
+  res.json({ data: records, count: records.length })
+}

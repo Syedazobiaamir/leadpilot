@@ -4,7 +4,7 @@
   "active": false,
   "nodes": [
     {
-      "id": "d3951fca-38df-40b2-9de2-796ba098fbd2",
+      "id": "6c09c83b-90a0-4cce-a36e-4b32ca382708",
       "name": "Approved follow-up event",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -19,7 +19,7 @@
         "responseMode": "onReceived",
         "options": {}
       },
-      "webhookId": "db5ae488-e201-4059-9af3-3e9ddcb8878c",
+      "webhookId": "927c3e38-2e02-4d7f-bbe2-11cb95a84cfe",
       "credentials": {
         "httpHeaderAuth": {
           "id": "lpAutomationKey1",
@@ -30,7 +30,7 @@
       "notesInFlow": true
     },
     {
-      "id": "2e6202d1-0e89-4d30-910f-6d31e3e5e1a6",
+      "id": "3072d6ff-505b-498a-9334-93769388ffe5",
       "name": "Check the event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -41,14 +41,14 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Never trust incoming data, even from our own backend: check it before using it.\nconst event = $input.first().json.body || {};\nconst d = event.data || {};\nconst text = (t, max) => String(t ?? '').replace(/\\s+/g, ' ').trim().slice(0, max);\nif (event.type !== 'followup.approved') throw new Error('Unexpected event type: ' + text(event.type, 40));\nif (!/^FU-[A-Za-z0-9-]{1,40}$/.test(d.followUpId || '')) throw new Error('The event has no valid followUpId');\nif (!/^LD-[A-Za-z0-9-]{1,40}$/.test(d.leadId || '')) throw new Error('The event has no valid leadId');\n// Stage 6 decision D2A: delivery is SIMULATED. Refuse anything else.\nif (d.delivery !== 'simulated') throw new Error('Only SIMULATED delivery is allowed in Stage 6');\n\nconst message = 'SIMULATED email for follow-up ' + d.followUpId + ' (\"' + text(d.subject, 80) + '\"): NOT sent to the customer, no real email left the system.';\nreturn [{ json: { followUpId: d.followUpId, leadId: d.leadId, message } }];\n"
+        "jsCode": "// Never trust incoming data, even from our own backend: check it before using it.\nconst event = $input.first().json.body || {};\nconst d = event.data || {};\nconst text = (t, max) => String(t ?? '').replace(/\\s+/g, ' ').trim().slice(0, max);\nif (event.type !== 'followup.approved') throw new Error('Unexpected event type - ' + text(event.type, 40));\nif (!/^FU-[A-Za-z0-9-]{1,40}$/.test(d.followUpId || '')) throw new Error('The event has no valid followUpId');\nif (!/^LD-[A-Za-z0-9-]{1,40}$/.test(d.leadId || '')) throw new Error('The event has no valid leadId');\n// Stage 6 decision D2A: delivery is SIMULATED. Refuse anything else.\nif (d.delivery !== 'simulated') throw new Error('Only SIMULATED delivery is allowed in Stage 6');\n\nconst message = 'SIMULATED email for follow-up ' + d.followUpId + ' (\"' + text(d.subject, 80) + '\"): NOT sent to the customer, no real email left the system.';\nreturn [{ json: { followUpId: d.followUpId, leadId: d.leadId, message } }];\n"
       },
       "notes": "Checks the event. Delivery must be \"simulated\".",
       "notesInFlow": true
     },
     {
-      "id": "2c2b1307-2bae-4ded-afec-0783068eea25",
-      "name": "Ask: still approved?",
+      "id": "8050cde9-0cab-465d-a212-306e88eae144",
+      "name": "Claim it",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -56,11 +56,20 @@
         0
       ],
       "parameters": {
-        "method": "GET",
-        "url": "={{ 'http://localhost:3001/api/automation/followups/' + $json.followUpId }}",
+        "method": "POST",
+        "url": "={{ 'http://localhost:3001/api/automation/followups/' + $json.followUpId + '/claim' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id) }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -73,11 +82,28 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
-      "notes": "CHECK FIRST, DELIVER SECOND: the backend is the source of truth for the follow-up status.",
+      "notes": "CLAIM FIRST, DELIVER SECOND: approved → \"sending\". Only one n8n run can win the claim, so the customer never gets the email twice.",
       "notesInFlow": true
     },
     {
-      "id": "8f4ae56b-d36b-404b-b08c-8c5916a85117",
+      "id": "27763497-91a0-46c2-a576-7ccc1df74d25",
+      "name": "Check: Claim it",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Claim it\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
+    },
+    {
+      "id": "58821b99-0516-4a4a-a688-c9719fdb5893",
       "name": "Deliver or stop?",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -88,13 +114,13 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const f = $input.first().json.data || {};\n// Already sent: this event is a duplicate. Stop quietly, so the customer never gets it twice.\nif (f.status === 'sent') return [];\n// Anything else (draft, rejected) must never be delivered: fail, so WF4 tells a person.\nif (f.status !== 'approved') throw new Error('Follow-up ' + f.id + ' is ' + f.status + ', not approved: NOT delivered');\nreturn $('Check the event').all();\n"
+        "jsCode": "const answer = $input.first().json;\n// claimed: true  → this run owns the follow-up: deliver it.\n// claimed: false → another run already has it (\"sending\" or \"sent\"): a duplicate event. Stop quietly.\n// (draft / rejected never get here: the claim answers 409, and \"Check: Claim it\" fails the run.)\nif (answer.claimed !== true) return [];\nreturn $('Check the event').all();\n"
       },
-      "notes": "approved: deliver. sent: duplicate, stop quietly. anything else: fail (escalate).",
+      "notes": "claimed: deliver. Not claimed: duplicate, stop quietly.",
       "notesInFlow": true
     },
     {
-      "id": "77a69ffc-c66e-4ad7-b089-2ae576b77160",
+      "id": "aca7d695-3e52-4326-98f6-28cc1bcda3ae",
       "name": "Simulated delivery (note on dashboard)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -111,6 +137,12 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), type: 'automation', message: $('Check the event').item.json.message, leadId: $('Check the event').item.json.leadId }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -127,7 +159,24 @@
       "notesInFlow": true
     },
     {
-      "id": "d6b600f3-c774-4abf-994f-c53876abad3d",
+      "id": "1a71501f-4d96-44ca-8f6e-9b6fe0e904d4",
+      "name": "Check: Simulated delivery (note on dashboard)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        990,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Simulated delivery (note on dashboard)\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
+    },
+    {
+      "id": "f00b4f1f-d1c6-4dcc-afd3-596c04f15773",
       "name": "Mark as sent",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -144,6 +193,12 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ via: \"simulated\" }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -156,11 +211,28 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
-      "notes": "Safe to retry: the backend never marks a follow-up as sent twice.",
+      "notes": "sending → sent. Safe to retry: the backend never marks a follow-up as sent twice.",
       "notesInFlow": true
     },
     {
-      "id": "57fe1fd9-2dce-450c-84dd-4e389a617702",
+      "id": "9b37b7c2-43e5-45c0-848d-fa1ff03cab39",
+      "name": "Check: Mark as sent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1210,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Mark as sent\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
+    },
+    {
+      "id": "4a216cb3-22bb-471c-9758-549104467078",
       "name": "Record the run",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -177,6 +249,12 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), workflow: 'Send approved follow-up', leadId: $('Check the event').item.json.leadId, status: 'success', attempts: 1, maxAttempts: 3 }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -189,6 +267,23 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000
+    },
+    {
+      "id": "d030fb73-ee02-4a1e-882c-23e2e3c799d4",
+      "name": "Check: Record the run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1430,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Record the run\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -207,14 +302,25 @@
       "main": [
         [
           {
-            "node": "Ask: still approved?",
+            "node": "Claim it",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Ask: still approved?": {
+    "Claim it": {
+      "main": [
+        [
+          {
+            "node": "Check: Claim it",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Claim it": {
       "main": [
         [
           {
@@ -240,6 +346,17 @@
       "main": [
         [
           {
+            "node": "Check: Simulated delivery (note on dashboard)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Simulated delivery (note on dashboard)": {
+      "main": [
+        [
+          {
             "node": "Mark as sent",
             "type": "main",
             "index": 0
@@ -251,7 +368,29 @@
       "main": [
         [
           {
+            "node": "Check: Mark as sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Mark as sent": {
+      "main": [
+        [
+          {
             "node": "Record the run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record the run": {
+      "main": [
+        [
+          {
+            "node": "Check: Record the run",
             "type": "main",
             "index": 0
           }

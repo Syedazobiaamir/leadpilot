@@ -9,9 +9,11 @@ Shared rules for every workflow:
 - **Alerts go to the dashboard** (decision D3A, no Slack): n8n writes them to the activity log through
   `POST /api/automation/activity`. Limitation: nobody is *pushed* a notification; someone has to look.
 - **Check incoming data**, even from our own backend: every webhook workflow starts with "Check the event".
-- **Retries:** every backend call is tried up to 3 times, 5 s apart. Known limitation: n8n's "Retry On Fail"
-  also retries permanent errors (e.g. `404`), which wastes ~10 s before escalating. Stage 7 limits retries
-  to temporary errors.
+- **Retries (Stage 7): only what can work.** Every backend call is an HTTP node with "Never error" + "Full
+  response", so its Retry On Fail (3×, 5 s) only retries network failures (no answer). The `Check: <step>` node
+  after it lets 2xx through and FAILS the run on anything else, labelled TEMPORARY (408/429/5xx) or PERMANENT
+  (other 4xx, not retried). A permanent 404 now escalates in ~1 s instead of ~12 s of useless retries.
+- **No ": " in thrown Code-node messages:** n8n only shows the text after the LAST ": " (found in a drill).
 
 ## WF1 - Hot-lead alert (`wf1-hot-lead-alert.json`)
 ```
@@ -22,16 +24,16 @@ The backend sends `lead.qualified` only for Hot leads, with the first name only.
 
 ## WF2 - Send approved follow-up, SIMULATED (`wf2-send-followup.json`)
 ```
-Approved follow-up event → Check the event → Ask: still approved? → Deliver or stop? → Simulated delivery → Mark as sent → Record the run
-  (webhook, key checked)     (delivery must      (GET status)          approved: deliver   (dashboard note)  (idempotent)
-                              be "simulated")                          sent: stop quietly
-                                                                       other: fail → WF4
+Approved follow-up event → Check the event → Claim it → Check → Deliver or stop? → Simulated delivery → Check → Mark as sent → Check → Record the run → Check
+  (webhook, key checked)     (delivery must      (approved →          claimed: deliver   (dashboard note)          (sending → sent,
+                              be "simulated")     "sending")           not claimed: stop quietly                  idempotent)
 ```
-**Check first, deliver second.** The first version delivered before asking the backend, and a drill showed
-it would "deliver" a follow-up that didn't exist. Now the backend's status decides: a duplicate event for an
-already-sent follow-up stops quietly (the customer never gets it twice), and a draft/rejected/missing one is
-never delivered. Remaining gap (Stage 7): if n8n crashes between delivery and mark-sent, the follow-up stays
-`approved`, and a re-sent event would deliver it again.
+**Claim first, deliver second (Stage 7).** The claim turns `approved` into `sending` and remembers the n8n run.
+Only one run can win it, so a duplicate event can never deliver the email twice. Draft/rejected/missing → the
+claim answers 4xx → PERMANENT → WF4. History: Stage 6 v1 delivered before checking anything (found by a drill);
+Stage 6 v2 asked "still approved?" first; Stage 7 replaced that with the claim, which also closes the race between
+two runs. If n8n stops between claim and mark-sent, the follow-up stays `sending` and the Recovery Agent escalates
+it after 15 min (it MAY have been delivered, so it is never re-sent automatically).
 
 ## WF4 - Error handler (`wf4-error-handler.json`)
 ```
@@ -42,6 +44,14 @@ WF1-WF3 have `errorWorkflow: lpWf4ErrorHand01` in their settings. The escalation
 failed run is marked `escalated`. URLs in error texts are hidden. When the backend itself is down (a WF3
 outage), nothing can be written, so the last step fails WF4's own run on purpose: the escalation is then
 only visible in n8n > Executions. An error workflow never triggers itself, so this can't loop.
+
+## WF5 - Recovery sweep (`wf5-recovery-sweep.json`, Stage 7)
+```
+Every 5 minutes → Run the recovery sweep (POST /api/automation/recovery/sweep, 60 s) → Check → Did the sweep work?
+```
+n8n only TRIGGERS the backend's Recovery Agent (on Vercel the backend can't run its own timers); all rules and
+limits live in the backend (`docs/self-healing.md`). A failed sweep fails the run → WF4. It records no run of its
+own, and a sweep with nothing to do writes nothing (288 sweeps a day would flood the sheet).
 
 ## WF3 - Health monitor (`wf3-health-monitor.json`)
 
@@ -86,3 +96,12 @@ uptime service as well). The outage duration is rounded and measured in 5-minute
 
 The activity log still contains the misleading "SIMULATED email for follow-up FU-DRILL-DOES-NOT-EXIST" note
 from the first drill (before the fix). It was left in place as an honest record.
+
+## Live verification, Stage 7 (2026-11-11)
+| Check | Result |
+|---|---|
+| n8n stopped, follow-up FU-mwc9urss-4538 approved | record `pending_retry` → n8n back → sweep → claimed by run #43 → sent → "Recovered … after 2 tries" |
+| The same event again | run #44 stopped quietly (claimed: false), nothing delivered twice |
+| Event for a missing follow-up | "Check: Claim it" → PERMANENT 404 in 1.2 s → WF4 (#47), full message visible after the ": " fix |
+| WF5 on schedule | run #54 → sweep 200 in 1.6 s, nothing to do |
+| n8n "Execute workflow" on WF4 (sample data) | ignored since the `lp` filter (earlier it had written a fake "Example Workflow" escalation: EV-n8n-29 / WF-n8n-231 in the sheet) |

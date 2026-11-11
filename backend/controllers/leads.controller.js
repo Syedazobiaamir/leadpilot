@@ -10,8 +10,10 @@ export async function listLeads(req, res) {
 }
 
 export async function createLead(req, res) {
-  const lead = await leadService.createLead(req.body)
+  const { lead, replayed } = await leadService.createLead(req.body, { idempotencyKey: req.get('Idempotency-Key') })
   // 201 Created, plus a Location header pointing to the new resource (a REST convention).
+  // A replay (same Idempotency-Key again) gets the same answer, marked with a header.
+  if (replayed) res.set('Idempotent-Replayed', 'true')
   res.status(201).location(`/api/leads/${lead.id}`).json({ data: lead })
 }
 

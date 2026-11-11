@@ -85,9 +85,9 @@ export function useLeads() {
   }, [applyResult])
 
   const addLead = useCallback(
-    async (input) => {
+    async (input, options) => {
       try {
-        const result = await createLead(input)
+        const result = await createLead(input, options)
         if (result.success) {
           // Put the new lead first in the list. This is a new array, not a change to the old
           // one, so React sees the change and re-renders.

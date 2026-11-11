@@ -1,0 +1,142 @@
+{
+  "id": "lpWf5RecoverySwp",
+  "name": "LeadPilot WF5 - Recovery sweep",
+  "active": false,
+  "nodes": [
+    {
+      "id": "f21f379c-dcdb-406c-820a-c0caa058152c",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "69f5bfe1-4481-48a9-b80c-739693770ab9",
+      "name": "Run the recovery sweep",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/automation/recovery/sweep",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lpAutomationKey1",
+          "name": "LeadPilot backend key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "POST /api/automation/recovery/sweep. Up to 60 s: a sweep may retry a few AI qualifications.",
+      "notesInFlow": true
+    },
+    {
+      "id": "4c0d7b58-2155-4bd3-8fef-61f550229220",
+      "name": "Check: Run the recovery sweep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        330,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Run the recovery sweep\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
+    },
+    {
+      "id": "19b053ed-d5f2-42eb-9c60-9936a67eb048",
+      "name": "Did the sweep work?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const result = $input.first().json.data || {};\n// ok: false = the Recovery Agent itself failed (e.g. storage down). Fail this run, so WF4 escalates.\nif (result.ok !== true) throw new Error('The recovery sweep failed - ' + String(result.summary || 'no summary').replace(/: /g, ' - '));\nreturn [{ json: { summary: result.summary, counts: result.counts } }];\n"
+      },
+      "notes": "Fails the run if the Recovery Agent reported a failure.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Run the recovery sweep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run the recovery sweep": {
+      "main": [
+        [
+          {
+            "node": "Check: Run the recovery sweep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Run the recovery sweep": {
+      "main": [
+        [
+          {
+            "node": "Did the sweep work?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "errorWorkflow": "lpWf4ErrorHand01"
+  },
+  "pinData": {},
+  "tags": []
+}

@@ -623,3 +623,4 @@ button:focus-visible {
 .activity-needs-person { border-left: 4px solid var(--danger); padding-left: 8px; }
 .activity-needs-person .activity-message { font-weight: 600; }
 .activity-hot { border-left: 4px solid var(--hot); padding-left: 8px; }
+.badge-followup-sending { background: var(--warm-bg); color: var(--warm); }

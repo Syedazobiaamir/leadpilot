@@ -2,7 +2,7 @@
 // n8n writes alerts in the background, so the data refreshes itself every 30 seconds.
 // It follows the same pattern as useLeads.js. See the comments there.
 import { useCallback, useEffect, useState } from 'react'
-import { getActivity, getAgentRuns, getWorkflowRuns } from '../services/leadService.js'
+import { getActivity, getAgentRuns, getRecoveries, getWorkflowRuns } from '../services/leadService.js'
 
 // Long in tests, so a test never sees a surprise refresh.
 export const MONITORING_REFRESH_MS = import.meta.env.MODE === 'test' ? 600_000 : 30_000
@@ -10,8 +10,8 @@ export const MONITORING_REFRESH_MS = import.meta.env.MODE === 'test' ? 600_000 :
 async function loadMonitoring() {
   try {
     // Promise.all runs both requests at the same time instead of one after the other.
-    const [events, runs, agentRuns] = await Promise.all([getActivity(), getWorkflowRuns(), getAgentRuns()])
-    return { data: { events, runs, agentRuns }, error: null }
+    const [events, runs, agentRuns, recoveries] = await Promise.all([getActivity(), getWorkflowRuns(), getAgentRuns(), getRecoveries()])
+    return { data: { events, runs, agentRuns, recoveries }, error: null }
   } catch (err) {
     return { data: null, error: err.message || 'Failed to load monitoring data' }
   }
@@ -21,6 +21,7 @@ export function useMonitoring() {
   const [activity, setActivity] = useState([])
   const [workflowRuns, setWorkflowRuns] = useState([])
   const [agentRuns, setAgentRuns] = useState([])
+  const [recoveries, setRecoveries] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -29,6 +30,7 @@ export function useMonitoring() {
       setActivity(data.events)
       setWorkflowRuns(data.runs)
       setAgentRuns(data.agentRuns)
+      setRecoveries(data.recoveries)
     }
     setError(loadError)
     setLoading(false)
@@ -63,5 +65,5 @@ export function useMonitoring() {
     applyResult(await loadMonitoring())
   }, [applyResult])
 
-  return { activity, workflowRuns, agentRuns, loading, error, reload, refresh }
+  return { activity, workflowRuns, agentRuns, recoveries, loading, error, reload, refresh }
 }

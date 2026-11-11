@@ -2,7 +2,7 @@
 // Every route here needs the header  x-automation-key: <AUTOMATION_SECRET>
 import { Router } from 'express'
 import { requireAutomationKey } from '../middleware/requireAutomationKey.js'
-import { checkConnection, getFollowUpStatus, markFollowUpSent, recordActivity, recordWorkflowRun } from '../controllers/automation.controller.js'
+import { checkConnection, claimFollowUp, getFollowUpStatus, markFollowUpSent, recordActivity, recordWorkflowRun, runRecoverySweep } from '../controllers/automation.controller.js'
 
 const router = Router()
 
@@ -12,6 +12,8 @@ router.get('/check', checkConnection) //                         GET  /api/autom
 router.post('/workflow-runs', recordWorkflowRun) //              POST /api/automation/workflow-runs
 router.post('/activity', recordActivity) //                      POST /api/automation/activity (alerts for the dashboard)
 router.get('/followups/:id', getFollowUpStatus) //               GET  /api/automation/followups/FU-...  (check before delivering)
+router.post('/recovery/sweep', runRecoverySweep) //               POST /api/automation/recovery/sweep (Stage 7, WF5)
+router.post('/followups/:id/claim', claimFollowUp) //            POST /api/automation/followups/FU-.../claim (Stage 7: before sending)
 router.post('/followups/:id/mark-sent', markFollowUpSent) //     POST /api/automation/followups/FU-.../mark-sent
 
 export default router

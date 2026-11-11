@@ -70,6 +70,52 @@ describe('App', () => {
     expect(within(row).getByText('Pending')).toBeInTheDocument()
   })
 
+  it('Stage 7: a retry after a LOST answer re-sends the same Idempotency-Key and shows the saved lead (no duplicate)', async () => {
+    const user = await renderApp()
+    await goTo(user, 'New Lead')
+    await user.type(screen.getByLabelText('Full name'), 'Ada Byron')
+    await user.type(screen.getByLabelText('Phone'), '512-555-0177')
+    await user.type(screen.getByLabelText('Email'), 'ada.byron@example.com')
+    await user.type(screen.getByLabelText('ZIP code'), '78702')
+    await user.selectOptions(screen.getByLabelText('Service needed'), 'Roofing')
+    await user.selectOptions(screen.getByLabelText('Timeline'), 'ASAP')
+    await user.type(screen.getByLabelText('Project details'), 'Roof leaking after the storm last night.')
+
+    api.db.loseNextAnswer = true // the server saves it, but the answer never arrives
+    await user.click(screen.getByRole('button', { name: 'Save lead' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not reach the server/) // honest: we don't know
+
+    await user.click(screen.getByRole('button', { name: 'Save lead' })) // the person tries again
+    expect(await screen.findByRole('status')).toHaveTextContent(/Lead LD-\d+ saved for Ada Byron/)
+    expect(screen.queryByText(/already exists/)).not.toBeInTheDocument()
+
+    const [first, second] = api.db.idempotencyKeys
+    expect(first).toMatch(/^[0-9a-f-]{36}$/)
+    expect(second).toBe(first) // the same submission → the same key
+    expect(api.db.leads.filter((l) => l.email === 'ada.byron@example.com')).toHaveLength(1)
+  })
+
+  it('Stage 7: a NEW submission (after success or after editing a field) gets a NEW key', async () => {
+    const user = await renderApp()
+    await goTo(user, 'New Lead')
+    const fill = async (name, phone, email) => {
+      await user.type(screen.getByLabelText('Full name'), name)
+      await user.type(screen.getByLabelText('Phone'), phone)
+      await user.type(screen.getByLabelText('Email'), email)
+      await user.type(screen.getByLabelText('ZIP code'), '78702')
+      await user.selectOptions(screen.getByLabelText('Service needed'), 'Siding')
+      await user.selectOptions(screen.getByLabelText('Timeline'), 'Within 1 month')
+      await user.type(screen.getByLabelText('Project details'), 'Need new siding on a two-story house.')
+      await user.click(screen.getByRole('button', { name: 'Save lead' }))
+    }
+    await fill('Alan Turing', '512-555-0178', 'alan.turing@example.com')
+    await screen.findByText(/saved for Alan Turing/)
+    await fill('Joan Clarke', '512-555-0179', 'joan.clarke@example.com')
+    await screen.findByText(/saved for Joan Clarke/)
+    const [a, b] = api.db.idempotencyKeys
+    expect(a).not.toBe(b)
+  })
+
   it('shows the duplicate error from the server under the form', async () => {
     const user = await renderApp()
     await goTo(user, 'New Lead')

@@ -13,8 +13,8 @@ import { sampleLeads } from '../data/sampleLeads.js'
 import { sampleActivity } from '../data/sampleActivity.js'
 import { sampleWorkflowRuns } from '../data/sampleWorkflowRuns.js'
 
-// Sample data for --seed. AgentRuns stays EMPTY on purpose: agent runs are only ever real records.
-const SAMPLE = { leads: sampleLeads, activity: sampleActivity, workflowRuns: sampleWorkflowRuns, agentRuns: [], followUps: [] }
+// Sample data for --seed. AgentRuns and Recoveries stay EMPTY on purpose: they are only ever real records.
+const SAMPLE = { leads: sampleLeads, activity: sampleActivity, workflowRuns: sampleWorkflowRuns, agentRuns: [], followUps: [], recoveries: [] }
 
 /** What to do for each kind of storage error (shown to the person running the script). */
 export const FIX_HINTS = {

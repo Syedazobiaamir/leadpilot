@@ -5,6 +5,7 @@ import { formatDateTime } from '../../utils/formatters.js'
 const STATUS_TEXT = {
   draft: 'AI draft · not sent · needs approval',
   approved: 'Approved · waiting for n8n to send it',
+  sending: 'n8n is sending it (SIMULATED) · locked so it can only go out once',
   rejected: 'Rejected · will not be sent',
   sent: 'Sent by n8n · SIMULATED: no real email reached the customer',
 }
@@ -67,12 +68,12 @@ export default function FollowUpPanel({ lead }) {
             {latest.sentAt && ` · sent ${formatDateTime(latest.sentAt)} (${latest.sentVia ?? 'unknown'})`}
           </p>
 
-          {waitingForSend && latest.status === 'approved' && (
+          {waitingForSend && (latest.status === 'approved' || latest.status === 'sending') && (
             <p className="ai-pending" role="status">
               Waiting for n8n to send it (SIMULATED)…
             </p>
           )}
-          {sendNote && latest.status === 'approved' && <p className="muted small">{sendNote}</p>}
+          {sendNote && (latest.status === 'approved' || latest.status === 'sending') && <p className="muted small">{sendNote}</p>}
 
           {latest.status === 'draft' && (
             <div className="button-row">

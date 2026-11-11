@@ -172,6 +172,12 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ executionId: String($execution.id), workflow: 'Health monitor', leadId: null, status: 'success', attempts: 1, maxAttempts: 1, lastError: 'Recovered: the backend was not ready for about ' + $json.minutes + ' min (' + $json.problem + ')' }) }}",
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 10000
         }
       },
@@ -181,6 +187,23 @@
           "name": "LeadPilot backend key"
         }
       }
+    },
+    {
+      "id": "41cd008b-03c9-437b-bbdc-bbc59fb07d3f",
+      "name": "Check: Record the outage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Did the backend accept it? 2xx → continue with its answer (the JSON body).\n// Anything else FAILS this run (→ WF4 escalates), labelled so a person knows what to do:\n//   TEMPORARY (408, 429, 5xx): the backend had a problem; trying again later can work\n//   PERMANENT (other 4xx):     retrying can never fix it, so it is NOT retried\n// \"No answer at all\" never gets here: the HTTP node already retried that 3 times.\nconst r = $input.first().json;\nconst s = r.statusCode;\nif (s >= 200 && s < 300) return [{ json: r.body ?? {} }];\nconst code = (r.body && r.body.error && r.body.error.code) || 'no error code';\nconst temporary = s === 408 || s === 429 || (s >= 500 && s <= 599);\nthrow new Error((temporary ? 'TEMPORARY' : 'PERMANENT') + ' backend answer to \"Record the outage\" - HTTP ' + s + ' ' + code + (temporary ? '' : ' (not retried, retrying cannot fix it)'));\n"
+      },
+      "notes": "2xx → continue. Other answers fail the run: TEMPORARY (5xx, 408, 429) or PERMANENT (4xx, not retried).",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -229,6 +252,17 @@
         [
           {
             "node": "Record the outage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record the outage": {
+      "main": [
+        [
+          {
+            "node": "Check: Record the outage",
             "type": "main",
             "index": 0
           }

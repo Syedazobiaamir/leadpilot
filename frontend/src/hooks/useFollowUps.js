@@ -76,7 +76,7 @@ export function useFollowUps(leadId) {
         setSendWatch(null)
       } else if (Date.now() - sendWatch.started > QUALIFICATION_WATCH_MS) {
         setSendWatch(null)
-        setSendNote('n8n has not confirmed sending yet. If n8n is not running, it stays "approved"; check the Automation page.')
+        setSendNote('n8n has not confirmed sending yet. If n8n is not running, it stays "approved" and the Recovery Agent hands it to n8n again later; check the Automation page.')
       } else {
         setSendWatch((watch) => watch && { ...watch, tick: watch.tick + 1 }) // check again
       }

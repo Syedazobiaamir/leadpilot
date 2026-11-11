@@ -18,3 +18,9 @@ export async function getAgentRuns() {
   const runs = await store.listAgentRuns()
   return runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt))
 }
+
+/** Recovery records (Stage 7), most recently changed first. */
+export async function getRecoveries() {
+  const records = await store.listRecoveries()
+  return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}

@@ -85,7 +85,7 @@ export function createSheetsStore({ client, cacheMs = 10_000, logger = defaultLo
 
   /**
    * Changes some fields of one record (found by its "id" column). Returns the updated record,
-   * or null if the ID doesn't exist. Used for leads, follow-ups and workflow runs.
+   * or null if the ID doesn't exist. Used for leads, follow-ups, workflow runs and recoveries.
    * Reads the tab FRESH (not from the cache) to find the row: with a stale cache, a row
    * deleted by hand in the last few seconds would make us overwrite the WRONG record.
    * Cells of columns we don't know (e.g. "notes") are kept.
@@ -124,6 +124,9 @@ export function createSheetsStore({ client, cacheMs = 10_000, logger = defaultLo
     insertWorkflowRun: (run) => append('workflowRuns', run), // Stage 6: real n8n runs
     updateWorkflowRun: (id, changes) => updateRecord('workflowRuns', id, changes),
     listAgentRuns: () => read('agentRuns'),
+    listRecoveries: () => read('recoveries'), // Stage 7
+    insertRecovery: (recovery) => append('recoveries', recovery),
+    updateRecovery: (id, changes) => updateRecord('recoveries', id, changes),
     insertAgentRun: (run) => append('agentRuns', run),
 
     /**

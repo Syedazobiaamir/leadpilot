@@ -44,7 +44,7 @@ With **n8n stopped** (the CLI writes to n8n's database directly):
 ```
 n8n import:workflow --input=automation/workflows/wf4-error-handler.json
 n8n publish:workflow --id=lpWf4ErrorHand01
-# then the same for wf3-health-monitor, wf2-send-followup, wf1-hot-lead-alert
+# then the same for wf3-health-monitor, wf2-send-followup, wf1-hot-lead-alert, wf5-recovery-sweep
 ```
 Then start n8n. A **published** workflow runs on its own (schedule or webhook). In n8n 2.x, saving
 an edit does not change the running version until you publish it again.
@@ -62,9 +62,10 @@ starting with `LeadPilot`.
 | ID | Name | Trigger | Does |
 |---|---|---|---|
 | `lpWf1HotLeadAlrt` | LeadPilot WF1 - Hot-lead alert | Webhook `lead-qualified` | Hot lead → alert on the dashboard → record run |
-| `lpWf2SendFollow1` | LeadPilot WF2 - Send approved follow-up | Webhook `followup-approved` | Check status → SIMULATED delivery (dashboard note) → mark sent → record run |
+| `lpWf2SendFollow1` | LeadPilot WF2 - Send approved follow-up | Webhook `followup-approved` | Claim (approved → sending) → SIMULATED delivery (dashboard note) → mark sent → record run |
 | `lpWf3HealthMon01` | LeadPilot WF3 - Health monitor | Every 5 min | Checks `/api/health/ready`. ONE alert when it goes down (the run fails on purpose → WF4), ONE recorded run when it recovers. Quiet otherwise |
-| `lpWf4ErrorHand01` | LeadPilot WF4 - Error handler | Any LeadPilot run fails | Escalation on the dashboard + run marked `escalated` |
+| `lpWf4ErrorHand01` | LeadPilot WF4 - Error handler | Any LeadPilot run fails | Escalation on the dashboard + run marked `escalated` (ignores non-`lp` workflows and n8n's sample data) |
+| `lpWf5RecoverySwp` | LeadPilot WF5 - Recovery sweep | Every 5 min | Asks the backend's Recovery Agent to retry what failed (Stage 7) |
 
 The backend sends events to n8n when `backend/.env` has `N8N_WEBHOOK_BASE_URL=http://localhost:5678/webhook`
 (restart the backend after changing it). Webhooks only accept the `x-automation-key` header (Header Auth with

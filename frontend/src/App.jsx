@@ -11,6 +11,7 @@ import LeadDetail from './components/leads/LeadDetail.jsx'
 import AutomationStatus from './components/monitoring/AutomationStatus.jsx'
 import ActivityLog from './components/monitoring/ActivityLog.jsx'
 import AgentRuns from './components/monitoring/AgentRuns.jsx'
+import RecoveryList from './components/monitoring/RecoveryList.jsx'
 import { useLeads } from './hooks/useLeads.js'
 import { useMonitoring } from './hooks/useMonitoring.js'
 import { filterLeads } from './utils/leadStats.js'
@@ -34,6 +35,7 @@ export default function App() {
     activity,
     workflowRuns,
     agentRuns,
+    recoveries,
     loading: monLoading,
     error: monError,
     reload: reloadMonitoring,
@@ -47,8 +49,8 @@ export default function App() {
   // Save the lead, then refresh the activity log in the background so the new
   // "lead captured" event shows up. "refresh" doesn't switch to the loading screen,
   // so the form's success message stays visible.
-  async function handleCreateLead(data) {
-    const result = await addLead(data)
+  async function handleCreateLead(data, options) {
+    const result = await addLead(data, options)
     if (result.success) refreshMonitoring()
     return result
   }
@@ -113,6 +115,14 @@ export default function App() {
                 <ActivityLog events={activity} />
               </section>
             </div>
+            <section className="card">
+              <h2>Self-healing</h2>
+              <p className="muted small">
+                Problems the system tries to fix by itself: it retries with growing waits (5, 10, 20 min, at most 4
+                tries), and hands anything it cannot fix to a person. The Recovery Agent checks every 5 minutes (n8n WF5).
+              </p>
+              <RecoveryList records={recoveries} />
+            </section>
             <section className="card">
               <h2>Workflow runs</h2>
               <p className="muted small">

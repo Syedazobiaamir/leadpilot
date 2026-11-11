@@ -55,6 +55,7 @@ The browser only talks to port 5173, so no CORS setup is needed.
 | Agent runs (Automation page, dashboard) | Real records of every agent run |
 | Automatic refresh while AI works | The list re-fetches every 3 s while a lead is pending, and stops when the result arrives or after 60 s |
 | Automation monitoring (success / retrying / failed / escalated) | Real n8n runs (badge **n8n**), events the backend could not deliver (**Not delivered**) and old sample runs (**Sample**). Escalations ("NEEDS A PERSON") and "HOT LEAD" alerts are highlighted in the activity log. The page refreshes every 30 s |
+| Self-healing (Automation page, Stage 7) | The Recovery Agent's records: **Needs a person** first, then **Retrying** (next try, tries x/4), then **Recovered**. The form sends an `Idempotency-Key`, so retrying a submission never creates a second lead. A follow-up n8n has claimed shows "sending" (locked) |
 | Activity & audit log | Sample events, plus real events for leads you create |
 
 ## Folder structure

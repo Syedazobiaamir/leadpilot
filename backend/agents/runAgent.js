@@ -16,7 +16,12 @@ import { PermissionError } from './toolRegistry.js'
  *   status: 'success' | 'skipped' (the agent decided there was nothing to do)
  *         | 'failed' | 'denied' (the agent tried to use a tool it may not use)
  */
-export async function runAgent({ agent, input, registry, store, logger, now = () => new Date() }) {
+/**
+ * shouldRecord(run): optional. Return false to NOT write this run to AgentRuns (Stage 7: the
+ * Recovery Agent's sweep runs every 5 minutes; a sweep that found nothing to do is not worth a
+ * spreadsheet row). Failed and denied runs are ALWAYS recorded, whatever it says.
+ */
+export async function runAgent({ agent, input, registry, store, logger, now = () => new Date(), shouldRecord = () => true }) {
   const startedAt = now().toISOString()
   const started = Date.now()
   const toolCalls = []
@@ -49,8 +54,9 @@ export async function runAgent({ agent, input, registry, store, logger, now = ()
     detail,
     startedAt,
   }
+  const record = status === 'failed' || status === 'denied' || shouldRecord(run)
   try {
-    await store.insertAgentRun(run)
+    if (record) await store.insertAgentRun(run)
   } catch (err) {
     // Recording must never hide the real outcome. The store has already logged why it failed.
     logger.warn('could not record agent run', { agent: agent.name, runId: run.runId, error: err.code ?? err.message })

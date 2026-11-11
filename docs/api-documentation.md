@@ -103,6 +103,13 @@ One lead. The ID format is `LD-` followed by digits.
 ### `POST /api/leads`
 Creates a lead from a customer inquiry.
 
+**Optional header `Idempotency-Key`** (Stage 7): 8-100 letters, digits, `-` or `_`; the dashboard form sends one
+random key per submission and the SAME key when the person retries. If a lead was already created with that key,
+the answer is that same lead again (`201` + header `Idempotent-Replayed: true`), never a second lead or a `409`.
+The same key with a different email/phone → `409 IDEMPOTENCY_KEY_REUSED`. The key is never returned by the API.
+Creates run one at a time inside the server, so two identical requests at the same moment can't both pass the
+duplicate check.
+
 **Request body**
 | Field | Type | Rules |
 |---|---|---|
@@ -177,7 +184,9 @@ Each AI run writes an activity event: `ai` (`LD-1005 classified as Cold (score 2
 ### Follow-up drafts (Stage 5)
 The AI writes **drafts only**; a person approves, edits or rejects them. **This API never sends a message itself:** approving hands the follow-up to n8n (Stage 6), whose sending is **SIMULATED** for now (no real email leaves the system).
 
-**Follow-up object:** `id` (`FU-...`), `leadId`, `channel` (`email`), `subject`, `body`, `status` (`draft` | `approved` | `rejected` | `sent`), `aiModel`, `createdAt`, `decidedAt`, `editedAt`, `sentAt`, `sentVia` (`simulated`, or `null` while not sent).
+**Follow-up object:** `id` (`FU-...`), `leadId`, `channel` (`email`), `subject`, `body`, `status` (`draft` | `approved` | `rejected` | `sending` | `sent`), `aiModel`, `createdAt`, `decidedAt`, `editedAt`, `sentAt`, `sentVia` (`simulated`, or `null` while not sent), `claimedAt`, `claimedBy` (Stage 7: when and by which n8n run it was claimed for sending).
+
+Life cycle: `draft` → `approved` (a person) → `sending` (n8n claimed it) → `sent` (n8n delivered it, SIMULATED).
 
 #### `GET /api/leads/:id/followups`
 The lead's follow-ups, newest first. `200 { "data": [ ... ], "count": 1 }`. Errors: `400 INVALID_LEAD_ID`, `404 LEAD_NOT_FOUND`.
@@ -191,7 +200,7 @@ Asks the Follow-up Agent for a draft. It is written **in the background**, so po
 If the lead already has an open `draft`, no new draft is written (the agent run is recorded as `skipped`). Errors: `400 INVALID_LEAD_ID`, `404 LEAD_NOT_FOUND`, `503 AI_UNAVAILABLE` (no AI key). AI failures and unsafe drafts (prices, promises, placeholders…) are recorded in AgentRuns, and no draft is saved.
 
 #### `POST /api/followups/:id/approve` · `POST /api/followups/:id/reject`
-A person's decision. `200 { "data": { ...followUp, "status": "approved", "decidedAt": "..." } }`. Writes an activity event. On approve, if automation is on, the backend sends the `followup.approved` event to n8n **in the background** (`… approved by staff (handed to n8n for SIMULATED sending)`); otherwise the event says `(not sent: n8n automation is off)`. If n8n can't be reached, the approval still succeeds and a `failed` workflow run is recorded.
+A person's decision. `200 { "data": { ...followUp, "status": "approved", "decidedAt": "..." } }`. Writes an activity event. On approve, if automation is on, the backend sends the `followup.approved` event to n8n **in the background** (`… approved by staff (handed to n8n for SIMULATED sending)`); otherwise the event says `(not sent: n8n automation is off)`. If n8n can't be reached, the approval still succeeds, a `failed` workflow run is recorded, and a recovery record makes the Recovery Agent hand it to n8n again later (Stage 7).
 
 #### `PATCH /api/followups/:id`
 A person edits a draft. Body: `{ "subject": "5-80 chars", "body": "20-2000 chars" }`. The result stays a `draft` with `editedAt` set. Only shape and length are checked: the AI's content rules don't apply to a person's own words.
@@ -215,6 +224,13 @@ Activity and audit events, newest first. `type` is one of `lead`, `ai`, `automat
 ```json
 200 { "data": [ { "id": "EV-5014", "type": "automation", "message": "...", "leadId": "LD-1001", "timestamp": "..." } ], "count": 8 }
 ```
+
+### `GET /api/recoveries`
+Stage 7 self-healing records, most recently changed first. One record per problem the system tried to fix by itself.
+```json
+200 { "data": [ { "id": "RC-...", "kind": "followup_event", "targetId": "FU-...", "status": "recovered", "attempts": 1, "nextRetryAt": null, "lastErrorKind": "unreachable", "lastError": "Could not reach n8n at localhost:5678 (is n8n running?)", "createdAt": "...", "updatedAt": "..." } ], "count": 3 }
+```
+`kind`: `qualification` (lead), `followup_event`, `followup_delivery` (follow-up), `hot_lead_event` (lead). `status`: `pending_retry` (next try at `nextRetryAt`), `recovered`, `escalated` (a person must look). Rules and limits: [`self-healing.md`](self-healing.md).
 
 ### `GET /api/workflow-runs`
 Automation workflow runs, newest first. Real runs are reported by n8n (`id` `WF-n8n-<execution>`) or recorded by the backend when an event could not reach n8n (`id` `WF-be-...`). The memory store also starts with **simulated sample runs** (`WF-90xx`).
@@ -249,12 +265,25 @@ n8n writes an alert to the activity log (Stage 6 decision D3A: alerts go to the 
 `type`: `automation` | `escalation` | `recovery` only (n8n can't write lead, AI or error events). `message` 1-500 characters, URLs replaced with `[URL hidden]`. **One event per n8n run** (`id` `EV-n8n-<executionId>`): `201` the first time, `200` with the first event if the run retries. Errors: `400 VALIDATION_ERROR`.
 
 #### `GET /api/automation/followups/:id`
-WF2 checks a follow-up **before** delivering it. Returns only `{ "data": { "id", "leadId", "status", "sentAt" } }` (no message, no customer data). Errors: `400 INVALID_FOLLOWUP_ID`, `404 FOLLOWUP_NOT_FOUND`.
+A follow-up's status only: `{ "data": { "id", "leadId", "status", "sentAt" } }` (no message, no customer data). Errors: `400 INVALID_FOLLOWUP_ID`, `404 FOLLOWUP_NOT_FOUND`. (WF2 used it in Stage 6; since Stage 7 it claims instead.)
+
+#### `POST /api/automation/followups/:id/claim` (Stage 7)
+WF2 claims an approved follow-up **before** delivering it. Body: `{ "executionId": "43" }` (the n8n run).
+`200 { "data": { "id", "leadId", "status": "sending" }, "claimed": true }` → deliver it.
+`claimed: false` (another run has it: `sending` or `sent`) → do NOT deliver (duplicate). The same run claiming
+again still gets `claimed: true`. Two runs at the same moment: exactly one wins. Errors: `400 VALIDATION_ERROR`,
+`400 INVALID_FOLLOWUP_ID`, `404 FOLLOWUP_NOT_FOUND`, `409 FOLLOWUP_NOT_APPROVED` (draft or rejected).
 
 #### `POST /api/automation/followups/:id/mark-sent`
-n8n says it sent an **approved** follow-up. Body: `{ "via": "simulated" }` (the only method in Stage 6).
+n8n says it sent a **claimed** follow-up (`sending` → `sent`). Body: `{ "via": "simulated" }` (the only method so far).
 `200 { "data": { ...followUp, "status": "sent", "sentAt": "...", "sentVia": "simulated" }, "alreadySent": false }`.
-**Idempotent:** calling it again returns `200` with `"alreadySent": true` and changes nothing, so a retry after a timeout can never record a follow-up as sent twice. Errors: `400 INVALID_FOLLOWUP_ID`, `400 VALIDATION_ERROR`, `404 FOLLOWUP_NOT_FOUND`, `409 FOLLOWUP_NOT_APPROVED`.
+**Idempotent:** calling it again returns `200` with `"alreadySent": true` and changes nothing. Errors: `400 INVALID_FOLLOWUP_ID`, `400 VALIDATION_ERROR`, `404 FOLLOWUP_NOT_FOUND`, `409 FOLLOWUP_NOT_CLAIMED` (not claimed first).
+
+#### `POST /api/automation/recovery/sweep` (Stage 7)
+n8n WF5 runs the Recovery Agent once (every 5 minutes). Waits for it (usually 1-2 s, more if it retries AI).
+`200 { "data": { "ok": true, "status": "success", "counts": { "stuck": 0, "adopted": 0, "retried": 1, "recovered": 1, ... }, "summary": "retried 1, recovered 1", "runId": "AR-..." } }`.
+`ok: false` = the agent itself failed (WF5 then fails → WF4 escalates). Two sweeps at the same moment run once.
+A sweep with nothing to do is not written to AgentRuns.
 
 ### Events the backend sends to n8n
 `POST <N8N_WEBHOOK_BASE_URL>/<path>` with header `x-automation-key` and body `{ "id": "EVT-<uuid>", "type", "occurredAt", "data" }`. Sent in the background with a 5 s deadline; never blocks or fails the API request.
@@ -282,7 +311,9 @@ n8n says it sent an **approved** follow-up. Body: `{ "via": "simulated" }` (the 
 | `INVALID_FOLLOWUP_ID` | 400 | Yes | Malformed follow-up ID |
 | `FOLLOWUP_NOT_FOUND` | 404 | Yes | Follow-up does not exist |
 | `FOLLOWUP_ALREADY_DECIDED` | 409 | Yes | Follow-up already approved or rejected |
-| `FOLLOWUP_NOT_APPROVED` | 409 | Yes | mark-sent on a follow-up that is not approved |
+| `FOLLOWUP_NOT_APPROVED` | 409 | Yes | Claim of a follow-up that is not approved (draft/rejected) |
+| `FOLLOWUP_NOT_CLAIMED` | 409 | Yes | mark-sent before the follow-up was claimed ("sending") |
+| `IDEMPOTENCY_KEY_REUSED` | 409 | Yes | The `Idempotency-Key` was already used for a different lead |
 | `AUTOMATION_UNAUTHORIZED` | 401 | Yes | Missing or wrong `x-automation-key` |
 | `AUTOMATION_NOT_CONFIGURED` | 503 | Yes (until configured) | No `AUTOMATION_SECRET` on the server |
 | `DUPLICATE_LEAD` | 409 | Yes | Lead already exists |
@@ -293,17 +324,16 @@ n8n says it sent an **approved** follow-up. Body: `{ "via": "simulated" }` (the 
 
 "Permanent" means sending the same request again will fail the same way. Only non-permanent errors should ever be retried.
 
-## Known limitations (Stage 6)
+## Known limitations (Stage 7)
 - Sending follow-ups is **SIMULATED** (n8n writes a note on the dashboard; no real email). Alerts appear only on the dashboard (no Slack/email/phone notification), so someone has to look. Decisions are not tied to a user (no login until Stage 8).
-- **Events are sent once.** If n8n is down, the event is lost (a `failed` workflow run records it); nothing re-sends it yet (Stage 7). Re-qualifying a lead as Hot sends the alert again.
-- If n8n "sends" a follow-up but crashes before calling mark-sent, the follow-up stays `approved` (Stage 7 recovery).
+- Lost events are re-sent by the Recovery Agent, which needs n8n WF5 to run. Re-qualifying a lead as Hot sends the alert again.
+- A follow-up stuck in `sending` (n8n stopped between claim and mark-sent) is escalated, never re-sent: it may have been delivered.
 - **AI free tier: 20 requests per day** for `gemini-2.5-flash` (verified from Google's own 429 response on 2026-11-05). After that, AI runs fail with `quota_exhausted` until the daily reset. Real use needs a paid tier (rotate the exposed key first).
 - AI results are not always right: see the measured accuracy in [`ai-qualification.md`](ai-qualification.md).
-- No automatic AI retries yet: a failed lead stays `failed` until someone clicks Retry (Stage 7).
-- If the server stops while an AI run is in progress, the lead stays `pending` (Stage 7 will find and retry such leads).
-- No authentication or rate limiting yet (Stage 8).
-- **Partial writes (Google Sheets):** creating a lead writes two rows, the lead and then its activity event. Sheets has no transactions. If the second write fails, the client gets `503`, but the lead **is saved**, so retrying the same request returns `409 DUPLICATE_LEAD`. A write that times out may also have been saved. Stage 7 adds idempotency keys and recovery for this.
-- **Duplicate race:** the duplicate check is check-then-insert. It held in memory (5 identical concurrent requests → 1 lead, 4 × `409`), but with Google Sheets two simultaneous identical requests could both pass. Stage 7 adds proper duplicate-request protection.
+- Automatic AI retries are limited to 3 per sweep and 5 per day (free tier = 20/day); the rest waits.
+- No authentication or rate limiting yet (Stage 8). Polling `/api/health/ready` fast exhausts Google's 60 reads/minute (each check reads 7 tabs).
+- **Partial writes (Google Sheets):** Sheets has no transactions. If a lead is saved but its activity event fails, the request still succeeds (`201`) and the gap is only logged. A lead write that timed out may have been saved: the form's retry with the same `Idempotency-Key` returns it.
+- **Duplicate protection is in-process:** creates run one at a time inside ONE server. Several server instances (e.g. serverless) would need a database-level lock (Stage 9).
 - **Cache:** reads are cached for 10 s, so hand edits in the sheet appear in the API within ~10 s.
 - **Rows broken by hand** (e.g. text in `score`) are skipped and logged as warnings, not returned.
 - **Scale:** every uncached read loads a whole tab. That is fine for hundreds of leads, not for many thousands.

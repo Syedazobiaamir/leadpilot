@@ -39,8 +39,14 @@ Setup: `automation/documentation/n8n-setup.md`. Workflow design and drill result
    backend is unreachable.
 10. **Simulated means labelled.** Delivery is SIMULATED in Stage 6 (`delivery: "simulated"`, `sentVia:
     "simulated"`). A real channel needs explicit approval, a credential check, and a new decision in CLAUDE.md.
-11. **Retries:** HTTP nodes use Retry On Fail (3 tries, 5 s). Known gap: it also retries permanent errors
-    (404/400). Stage 7 limits retries to temporary errors. Don't retry anything endlessly.
+11. **Retries (Stage 7):** every backend call is an HTTP node with "Never error" + "Full response" (so Retry On
+    Fail, 3 tries, 5 s, only retries real network failures) followed by a `Check: <step>` Code node: 2xx passes,
+    anything else FAILS the run labelled TEMPORARY (408/429/5xx) or PERMANENT (other 4xx, never retried).
+    Lost hand-offs are retried later by the backend's Recovery Agent, not by n8n. Don't retry anything endlessly.
+12. **Claim before acting on the outside world** (WF2): `claim` (approved → sending) first; `claimed: false` =
+    duplicate → stop quietly. A follow-up stuck in "sending" is escalated, never re-sent.
+13. **No ": " inside a thrown error message in a Code node.** n8n only shows the text after the LAST ": ",
+    so the start of the message disappears. Use " - " instead.
 
 ## Changing a workflow
 - Workflow files in `automation/workflows/` are the source of truth (kept in Git). Edit the JSON (or change it

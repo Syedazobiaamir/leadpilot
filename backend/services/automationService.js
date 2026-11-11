@@ -18,6 +18,7 @@ import { config } from '../config.js'
 import * as leadStore from './leadStore.js'
 import { createAutomationClient } from './automation/automationClient.js'
 import { firstNameOf } from './ai/followUpPrompt.js'
+import { recovery } from './recoveryService.js'
 
 // The workflow names shown on the dashboard. n8n uses the same names when it reports runs.
 export const WORKFLOWS = {
@@ -59,13 +60,18 @@ export function cleanErrorText(text) {
 /**
  * client: an automationClient (or a fake in tests), or null when sending events is off
  * secret: AUTOMATION_SECRET, or null when n8n may not call us
+ * getRecovery: the CURRENT recovery service (Stage 7): a failed hand-off opens a recovery record,
+ *              so the Recovery Agent sends the event again later (from the CURRENT data)
  */
-export function createAutomationService({ client = null, secret = null, store = leadStore, logger = defaultLogger, now = () => new Date() } = {}) {
+export function createAutomationService({ client = null, secret = null, store = leadStore, logger = defaultLogger, now = () => new Date(), getRecovery = recovery } = {}) {
   const running = new Set() // events being sent right now (for whenIdle)
   let counter = 0
 
-  /** Sends an event in the background. Never throws: a failure is logged and recorded. */
-  function emit(type, data, { workflow, leadId }) {
+  /**
+   * Sends an event in the background. Never throws: a failure is logged and recorded.
+   * recoveryKind + targetId: which recovery record tracks this hand-off (Stage 7).
+   */
+  function emit(type, data, { workflow, leadId, recoveryKind, targetId }) {
     if (!client) {
       logger.debug('automation off: event not sent', { type, leadId })
       return Promise.resolve(null)
@@ -73,13 +79,17 @@ export function createAutomationService({ client = null, secret = null, store = 
     const startedAt = now().toISOString()
     const job = client
       .send(type, data)
-      .then((result) => {
+      .then(async (result) => {
         logger.info('automation event sent', { type, leadId, eventId: result.eventId })
+        await getRecovery().recordSuccess({ kind: recoveryKind, targetId }) // closes a record from an earlier failure
         return result
       })
       .catch(async (err) => {
         logger.warn('automation event failed', { type, leadId, kind: err.kind ?? 'unknown', temporary: err.temporary ?? null, reason: err.message })
-        // The workflow never started, so n8n can't record this run: we do. No retry yet (Stage 7).
+        // Stage 7: open/update a recovery record. The retry policy decides: send again later
+        // (n8n down, slow, 5xx) or call a person (workflow not active, keys differ).
+        await getRecovery().recordFailure({ kind: recoveryKind, targetId, error: err })
+        // The workflow never started, so n8n can't record this run: we do.
         try {
           await store.insertWorkflowRun({
             id: `WF-be-${Date.now()}-${++counter}`,
@@ -119,7 +129,7 @@ export function createAutomationService({ client = null, secret = null, store = 
         classification: lead.classification,
         score: lead.score,
         reason: lead.aiReason ? String(lead.aiReason).slice(0, 200) : null,
-      }, { workflow: WORKFLOWS.hotLeadAlert, leadId: lead.id })
+      }, { workflow: WORKFLOWS.hotLeadAlert, leadId: lead.id, recoveryKind: 'hot_lead_event', targetId: lead.id })
     },
 
     /** For a draft a person just approved. n8n "sends" it (SIMULATED), then calls mark-sent. */
@@ -131,7 +141,7 @@ export function createAutomationService({ client = null, secret = null, store = 
         subject: followUp.subject,
         body: followUp.body, // already uses the customer's first name only (Stage 5)
         delivery: 'simulated', // Stage 6 decision D2A: no real message is sent to anyone
-      }, { workflow: WORKFLOWS.sendFollowUp, leadId: followUp.leadId })
+      }, { workflow: WORKFLOWS.sendFollowUp, leadId: followUp.leadId, recoveryKind: 'followup_event', targetId: followUp.id })
     },
 
     /**

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { SERVICE_TYPES, TIMELINES, validateLead } from '../../validation/leadSchema.js'
 
 const EMPTY_FORM = { name: '', phone: '', email: '', zip: '', serviceType: '', timeline: '', message: '' }
@@ -15,7 +15,7 @@ function FieldError({ name, errors }) {
 
 /**
  * Lead capture form.
- * onSubmit(data) must return a Promise of { success, lead?, errors? }.
+ * onSubmit(data, { idempotencyKey }) must return a Promise of { success, lead?, errors? }.
  * The form doesn't know where the data goes, which makes it easy to test and reuse.
  */
 export default function LeadCaptureForm({ onSubmit }) {
@@ -23,10 +23,14 @@ export default function LeadCaptureForm({ onSubmit }) {
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [savedLead, setSavedLead] = useState(null)
+  // Stage 7: one Idempotency-Key per submission. Clicking "Save" again after an error re-sends
+  // the SAME key, so a lead that was saved (but whose answer got lost) is never created twice.
+  const submissionKey = useRef(null)
 
   function handleChange(event) {
     const { name, value } = event.target
     setValues((current) => ({ ...current, [name]: value }))
+    submissionKey.current = null // the data changed: this is a new submission
     // Clear that field's error as soon as the user starts fixing it.
     if (errors[name]) setErrors((current) => ({ ...current, [name]: undefined }))
   }
@@ -45,8 +49,10 @@ export default function LeadCaptureForm({ onSubmit }) {
     // 2. Send to the service, which validates again. Never trust only the UI.
     setSubmitting(true)
     try {
-      const result = await onSubmit(check.data)
+      submissionKey.current ??= crypto.randomUUID()
+      const result = await onSubmit(check.data, { idempotencyKey: submissionKey.current })
       if (result.success) {
+        submissionKey.current = null
         setSavedLead(result.lead)
         setValues(EMPTY_FORM)
         setErrors({})

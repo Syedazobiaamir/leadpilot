@@ -48,6 +48,9 @@ export const updateWorkflowRun = (id, changes) => store.updateWorkflowRun(id, ch
 export const listFollowUps = () => store.listFollowUps()
 export const insertFollowUp = (followUp) => store.insertFollowUp(followUp)
 export const updateFollowUp = (id, changes) => store.updateFollowUp(id, changes)
+export const listRecoveries = () => store.listRecoveries()
+export const insertRecovery = (recovery) => store.insertRecovery(recovery)
+export const updateRecovery = (id, changes) => store.updateRecovery(id, changes)
 export const listAgentRuns = () => store.listAgentRuns()
 export const insertAgentRun = (run) => store.insertAgentRun(run)
 /** Resolves if storage is reachable and correctly set up. Otherwise throws a 503 AppError. */

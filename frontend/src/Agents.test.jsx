@@ -90,6 +90,13 @@ describe('follow-up drafts', () => {
     expect(within(panel()).queryByRole('status')).not.toBeInTheDocument() // waiting has stopped
   })
 
+  it('a follow-up n8n has claimed shows "sending" (locked), not "sent"', async () => {
+    const { panel } = await openLead('Maria Gonzalez', { setup: (db) => db.followUps.push(draftFor('LD-1001', { status: 'sending', claimedBy: '41' })) })
+    expect(await within(panel()).findByText(/n8n is sending it \(SIMULATED\) · locked so it can only go out once/)).toBeInTheDocument()
+    expect(within(panel()).queryByText(/Sent by n8n/)).not.toBeInTheDocument()
+    expect(within(panel()).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+  })
+
   it('Approve with n8n off → stays "approved", and says so honestly after a while (never "sent")', async () => {
     const { user, panel } = await openLead('Maria Gonzalez', { setup: (db) => db.followUps.push(draftFor('LD-1001')) })
     await user.click(await within(panel()).findByRole('button', { name: 'Approve' }))
@@ -204,5 +211,45 @@ describe('n8n automation on the Automation page (Stage 6)', () => {
     installFakeApi()
     render(<App />)
     expect(await screen.findByRole('note')).toHaveTextContent(/Follow-up emails are SIMULATED/)
+  })
+})
+
+describe('self-healing on the Automation page (Stage 7)', () => {
+  const record = (id, status, changes = {}) => ({
+    id, kind: 'qualification', targetId: 'LD-1013', status, attempts: 2, nextRetryAt: null,
+    lastErrorKind: 'timeout', lastError: 'Gemini did not respond in time.', createdAt: '2026-11-11T10:00:00.000Z', updatedAt: '2026-11-11T10:05:00.000Z', ...changes,
+  })
+
+  async function openAutomation(setup) {
+    const api = installFakeApi()
+    setup?.(api.db)
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Hot leads to call first' })
+    await user.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('button', { name: 'Automation' }))
+    return screen.getByRole('heading', { name: 'Self-healing' }).closest('section')
+  }
+
+  it('says so when there is nothing to recover', async () => {
+    const section = await openAutomation()
+    expect(within(section).getByText(/Nothing to recover/)).toBeInTheDocument()
+  })
+
+  it('lists records with plain labels; "Needs a person" first; the next try time while retrying', async () => {
+    const section = await openAutomation((db) => {
+      db.recoveries.push(
+        record('RC-1', 'recovered', { kind: 'followup_event', targetId: 'FU-9', updatedAt: '2026-11-11T10:30:00.000Z' }),
+        record('RC-2', 'pending_retry', { nextRetryAt: '2026-11-11T10:10:00.000Z' }),
+        record('RC-3', 'escalated', { kind: 'followup_delivery', targetId: 'FU-7', lastErrorKind: 'stuck_sending', lastError: 'It MAY have been delivered: check before sending it again.' }),
+      )
+    })
+    const items = within(within(section).getByRole('list', { name: 'Recoveries' })).getAllByRole('listitem')
+    expect(items.map((li) => li.querySelector('.status-pill').textContent)).toEqual(['Needs a person', 'Retrying', 'Recovered'])
+    expect(items[0]).toHaveTextContent('Follow-up delivery · FU-7')
+    expect(items[0]).toHaveTextContent(/MAY have been delivered/)
+    expect(items[1]).toHaveTextContent(/next try/)
+    expect(items[1]).toHaveTextContent('tries 2/4')
+    expect(items[2]).toHaveTextContent('Hand-off to n8n (follow-up) · FU-9')
+    expect(items[2]).not.toHaveTextContent(/Last error/) // a recovered problem shows no stale error
   })
 })
