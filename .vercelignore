@@ -1,0 +1,16 @@
+# Files that must NEVER be uploaded to Vercel (when deploying from this computer with the CLI).
+# Deploys from GitHub only contain committed files anyway; this is a second safety net.
+.env
+.env.*
+**/.env
+**/.env.*
+**/STAFF-PASSWORD.txt
+backups/
+**/node_modules/
+frontend/dist/
+.claude/
+*service-account*.json
+*credentials*.json
+*-key.json
+backend/evals/last-run.json
+backend/evals/followup-last-run.json

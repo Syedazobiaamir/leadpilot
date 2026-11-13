@@ -182,7 +182,8 @@ export async function createLead(input, { idempotencyKey } = {}) {
     }
     // For server-side failures, show a reference so support can find it in the logs.
     const reference = err.status >= 500 && err.requestId ? ` (reference: ${err.requestId.slice(0, 8)})` : ''
-    return { success: false, errors: { form: err.message + reference } }
+    // `code` (Stage 9) lets the public customer page show its own, friendlier wording.
+    return { success: false, errors: { form: err.message + reference }, code: err.code, reference: reference ? err.requestId.slice(0, 8) : null }
   }
 }
 

@@ -55,6 +55,9 @@ async function main() {
   if (viaFrontend) {
     const page = await fetch(BASE + '/')
     check('App page loads', page.status === 200 && (await page.text()).includes('<title>LeadPilot</title>'))
+    // Stage 9: the public customer form page is served at /request (same app page, no login).
+    const publicPage = await fetch(BASE + '/request')
+    check('Public form page /request loads', publicPage.status === 200 && (await publicPage.text()).includes('<div id="root">'))
   }
 
   // --- Read endpoints

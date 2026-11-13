@@ -18,6 +18,7 @@
 import { z } from 'zod'
 import { AppError } from '../utils/AppError.js'
 import { logger as defaultLogger } from '../utils/logger.js'
+import { keepAlive } from '../utils/background.js'
 import { config } from '../config.js'
 import * as leadStore from './leadStore.js'
 import { AiError, createGeminiClient } from './ai/geminiClient.js'
@@ -106,7 +107,7 @@ export function createFollowUpService({ ai, store = leadStore, logger = defaultL
       })
       .finally(() => running.delete(leadId))
     running.set(leadId, job)
-    return job
+    return keepAlive(job) // Stage 9: on Vercel, keep the function alive until the draft is saved
   }
 
   async function decide(id, status, verb) {

@@ -13,6 +13,7 @@
 //             goes to the log, the activity log and AgentRuns. Never a guessed or partial result.
 import { AppError } from '../utils/AppError.js'
 import { logger as defaultLogger } from '../utils/logger.js'
+import { keepAlive } from '../utils/background.js'
 import { config } from '../config.js'
 import * as leadStore from './leadStore.js'
 import { AiError, createGeminiClient } from './ai/geminiClient.js'
@@ -72,7 +73,7 @@ export function createQualificationService({ ai, store = leadStore, logger = def
       })
       .finally(() => running.delete(id))
     running.set(id, job)
-    return job
+    return keepAlive(job) // Stage 9: on Vercel, keep the function alive until the AI answer is saved
   }
 
   return {

@@ -14,6 +14,7 @@
 import { z } from 'zod'
 import { AppError } from '../utils/AppError.js'
 import { logger as defaultLogger } from '../utils/logger.js'
+import { keepAlive } from '../utils/background.js'
 import { config } from '../config.js'
 import * as leadStore from './leadStore.js'
 import { createAutomationClient } from './automation/automationClient.js'
@@ -108,7 +109,7 @@ export function createAutomationService({ client = null, secret = null, store = 
       })
       .finally(() => running.delete(job))
     running.add(job)
-    return job
+    return keepAlive(job) // Stage 9: on Vercel, keep the function alive until n8n got the event
   }
 
   return {

@@ -92,6 +92,8 @@ describe('createLead', () => {
     expect(await createLead(newLead)).toEqual({
       success: false,
       errors: { form: 'A lead with this email or phone number already exists' },
+      code: 'DUPLICATE_LEAD',
+      reference: null,
     })
   })
 

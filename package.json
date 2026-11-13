@@ -1,0 +1,9 @@
+{
+  "name": "leadpilot",
+  "private": true,
+  "description": "Root of the LeadPilot repository. Only used by Vercel (api/ function + frontend build). Run the apps from backend/ and frontend/.",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  }
+}

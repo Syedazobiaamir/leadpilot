@@ -664,3 +664,9 @@ button:focus-visible {
 .meter-fill { height: 100%; background: var(--primary); border-radius: 5px; }
 .meter-warning .meter-fill { background: var(--warm); }
 .meter-danger .meter-fill { background: var(--danger); }
+
+/* Stage 9: the public customer page (/request). One centered column, no sidebar. */
+.public-shell { min-height: 100vh; max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+.public-header h1 { margin: 0 0 4px; }
+.public-header p { margin: 0; }
+.public-note { text-align: center; }

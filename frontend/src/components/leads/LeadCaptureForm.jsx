@@ -13,12 +13,22 @@ function FieldError({ name, errors }) {
   )
 }
 
+const staffSuccessText = (lead) => `Lead ${lead.id} saved for ${lead.name}. AI qualification is pending (simulated).`
+
 /**
  * Lead capture form.
  * onSubmit(data, { idempotencyKey }) must return a Promise of { success, lead?, errors? }.
  * The form doesn't know where the data goes, which makes it easy to test and reuse.
+ * Stage 9: the same form is used by staff (dashboard) and by customers (the public /request page);
+ * the labels and the success text can be changed for each.
  */
-export default function LeadCaptureForm({ onSubmit }) {
+export default function LeadCaptureForm({
+  onSubmit,
+  label = 'New lead',
+  submitText = 'Save lead',
+  submittingText = 'Saving…',
+  successText = staffSuccessText,
+}) {
   const [values, setValues] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -82,7 +92,7 @@ export default function LeadCaptureForm({ onSubmit }) {
   }
 
   return (
-    <form className="card lead-form" onSubmit={handleSubmit} noValidate aria-label="New lead">
+    <form className="card lead-form" onSubmit={handleSubmit} noValidate aria-label={label}>
       {errors.form && (
         <p className="form-error" role="alert">
           {errors.form}
@@ -90,7 +100,7 @@ export default function LeadCaptureForm({ onSubmit }) {
       )}
       {savedLead && (
         <p className="form-success" role="status">
-          Lead {savedLead.id} saved for {savedLead.name}. AI qualification is pending (simulated).
+          {successText(savedLead)}
         </p>
       )}
 
@@ -150,7 +160,7 @@ export default function LeadCaptureForm({ onSubmit }) {
       </div>
 
       <button type="submit" className="button-primary" disabled={submitting}>
-        {submitting ? 'Saving…' : 'Save lead'}
+        {submitting ? submittingText : submitText}
       </button>
     </form>
   )

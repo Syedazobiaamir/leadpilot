@@ -10,6 +10,7 @@
 // Orchestrator records one more run with a one-line summary of the whole pipeline, e.g.
 //   "validation: ok → qualification: Hot 95 → followup: draft FU-..."
 import { logger as defaultLogger } from '../utils/logger.js'
+import { keepAlive } from '../utils/background.js'
 import * as leadStore from '../services/leadStore.js'
 import { qualification } from '../services/qualificationService.js'
 import { followUps } from '../services/followUpService.js'
@@ -97,7 +98,7 @@ export function createOrchestrator({
         .then((outcome) => outcome.result)
         .finally(() => running.delete(leadId))
       running.set(leadId, job)
-      return job
+      return keepAlive(job) // Stage 9: on Vercel, keep the function alive until the whole pipeline is done
     },
 
     /** Resolves when no pipeline (and no agent job it started) is running. For tests and scripts. */
