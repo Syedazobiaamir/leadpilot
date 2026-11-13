@@ -7,26 +7,35 @@ import leadsRoutes from './routes/leads.routes.js'
 import monitoringRoutes from './routes/monitoring.routes.js'
 import followUpRoutes from './routes/followups.routes.js'
 import automationRoutes from './routes/automation.routes.js'
+import authRoutes from './routes/auth.routes.js'
+import reportRoutes from './routes/reports.routes.js'
 import { requestId } from './middleware/requestId.js'
 import { requestLogger } from './middleware/requestLogger.js'
 import { notFound } from './middleware/notFound.js'
 import { errorHandler } from './middleware/errorHandler.js'
+import { securityHeaders } from './middleware/securityHeaders.js'
+import { config } from './config.js'
 
 export function createApp() {
   const app = express()
 
   // Don't advertise "X-Powered-By: Express". It tells attackers what we run.
   app.disable('x-powered-by')
+  // Behind a proxy (Vercel), read the visitor's real IP from X-Forwarded-For (Stage 8, rate limits).
+  app.set('trust proxy', config.trustProxy)
 
   // ORDER MATTERS: middleware runs top to bottom for each request.
+  app.use(securityHeaders({ production: config.env === 'production' })) // 0. browser security rules on every response
   app.use(requestId) // 1. give the request an ID first, so everything after can use it
   app.use(requestLogger()) // 2. log the request when it finishes
   app.use(express.json({ limit: '10kb' })) // 3. parse JSON bodies (and block huge ones)
 
   // 4. Routes
   app.use('/api/health', healthRoutes)
+  app.use('/api/auth', authRoutes) // staff login (public: that's how you get in)
   app.use('/api/leads', leadsRoutes)
   app.use('/api/followups', followUpRoutes)
+  app.use('/api/reports', reportRoutes) // Stage 8: operational report (staff only)
   app.use('/api/automation', automationRoutes) // only n8n (needs the x-automation-key header)
   app.use('/api', monitoringRoutes) // /api/activity, /api/workflow-runs, /api/agent-runs and /api/recoveries
 

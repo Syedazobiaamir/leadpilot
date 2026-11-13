@@ -65,11 +65,13 @@ describe('the orchestrator itself', () => {
   })
 
   it('the customer gets 201 right away, even if the AI is slow', async () => {
-    qualifierAi.slowDown(300)
+    // A WIDE margin (AI 1.5 s vs answer < 1 s): under a busy full test run, 300 ms vs 250 ms once
+    // failed by timing alone (flaky). The point stays: the answer never waits for the AI.
+    qualifierAi.slowDown(1500)
     const started = Date.now()
     const res = await request(app).post('/api/leads').send(lead())
     expect(res.status).toBe(201)
-    expect(Date.now() - started).toBeLessThan(250)
+    expect(Date.now() - started).toBeLessThan(1000)
     expect(res.body.data.qualificationStatus).toBe('pending')
   })
 })

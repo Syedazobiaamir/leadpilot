@@ -38,6 +38,9 @@ Settings live in `backend/.env` (copy `.env.example`). `.env` is never committed
 | `CONTRACTOR_NAME` | `LeadPilot Demo Contracting` (fictional) | Business name that signs AI follow-up drafts |
 | `AUTOMATION_SECRET` | (empty = automation off) | Shared secret with n8n, at least 32 characters. **Secret.** n8n sends it as `x-automation-key`; the backend sends it to n8n the same way. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Tests always have automation off.** |
 | `N8N_WEBHOOK_BASE_URL` | (empty = no events sent) | Where n8n's Webhook nodes listen, e.g. `http://localhost:5678/webhook`. Needs `AUTOMATION_SECRET` |
+| `STAFF_PASSWORD_HASH` | (empty = staff routes closed, 503) | Stage 8: scrypt hash of the staff password. Written by `npm run auth:set-password`. **Secret** |
+| `SESSION_SECRET` | (empty) | Stage 8: signs login cookies (≥ 32 random characters). Written by the same script. **Secret**; change it to end all sessions |
+| `TRUST_PROXY` | (empty) | Stage 8: number of proxies in front of the server (`1` on Vercel), so rate limits see the real visitor IP. Empty locally |
 
 With `DATA_STORE=sheets` and a missing or malformed Google setting, the server **refuses to start** and lists every problem.
 
@@ -126,3 +129,11 @@ It checks 23 behaviours (24 through the proxy, including the app page) and exits
 - No authentication, rate limiting or security headers yet (Stage 8).
 - No CORS setup: in development the Vite proxy makes it unnecessary. Deployment is decided in Stage 9.
 - Workflow runs are simulated sample data (Stage 6: n8n).
+
+## Stage 8 scripts
+| Command | What it does |
+|---|---|
+| `npm run auth:set-password` | Asks for the staff password twice (hidden) and writes its hash + a session secret to `.env`. Run it in your own terminal |
+| `npm run keys:import-google -- "<key.json>"` | Writes a NEW Google service-account key into `.env` (refuses the old exposed key) |
+| `npm run keys:set-gemini` | Asks for a NEW Gemini key (hidden) and writes it into `.env` |
+| `npm run smoke` | Now logs in: set `STAFF_PASSWORD` (or type it when asked). Sends ~9 form POSTs: wait a minute between runs (rate limit) |

@@ -3,6 +3,7 @@
 // JSON logs can be searched and filtered by tools (Vercel logs, n8n monitoring),
 // unlike free-text messages.
 import { config } from '../config.js'
+import { getRequestContext } from './requestContext.js'
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 }
 
@@ -31,7 +32,9 @@ export function createLogger({ level = 'info', output = console.log } = {}) {
 
   function write(lvl, msg, fields = {}) {
     if (LEVELS[lvl] < minimum) return
-    output(JSON.stringify({ level: lvl, time: new Date().toISOString(), msg, ...redact(fields) }))
+    // Stage 8: add the current request's ID to EVERY line (unless the caller already set one).
+    const requestId = getRequestContext()?.requestId
+    output(JSON.stringify({ level: lvl, time: new Date().toISOString(), msg, ...(requestId && { requestId }), ...redact(fields) }))
   }
 
   return {

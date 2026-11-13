@@ -17,7 +17,7 @@ description: How to write, run and honestly report tests for this project (Vites
 | `backend/` | `npm test` | Unit + API tests |
 | `frontend/` | `npm test` | Unit + component tests (fake API, no server needed) |
 | `frontend/` | `npm run lint` and `npm run build` | Must pass |
-| `backend/` | `npm run smoke` | End-to-end through the Vite proxy (both servers running). Creates one lead per run |
+| `backend/` | `npm run smoke` | End-to-end through the Vite proxy (both servers running). Logs in (Stage 8: `STAFF_PASSWORD` env var, or a hidden prompt). Creates one lead per run; wait a minute between runs (form rate limit) |
 
 Run the tests with a time limit (e.g. `timeout 120 npx vitest run`) so a hung run is noticed instead of blocking.
 
@@ -43,3 +43,14 @@ Run the real server on a spare port (e.g. 3002) with overridden env vars, never 
 
 ## Manual end-to-end check
 Automated tests don't replace actually using the app. Start both servers, go through the checklist in `frontend/README.md`, run `npm run smoke`, and ask the developer to confirm.
+
+## Logged-in tests (Stage 8)
+- Backend: `tests/setup.js` logs every test in through the REAL login and makes supertest send the cookie.
+  To test as a visitor: `asVisitor(request(app).get(...))` (from `tests/staffSession.js`). Never add a bypass to the app.
+- A new route is automatically checked by `tests/auth.test.js` (it reads the route files): put it on the PUBLIC
+  list there only if it must really be public.
+- Frontend: `installFakeApi({ session: { loggedIn, configured } })`; logged in by default; `FAKE_STAFF_PASSWORD`.
+- Rate limits are 10 000 in tests; lower them on purpose with `useLimitsForTests({ ... })`.
+- Risky live drills (password guessing locks login for 15 min) run on an ISOLATED backend
+  (`PORT=3002 DATA_STORE=memory GEMINI_API_KEY= N8N_WEBHOOK_BASE_URL= node --env-file=.env server.js`).
+- Timing tests need wide margins (a busy full run once made 250 ms vs 300 ms flaky).

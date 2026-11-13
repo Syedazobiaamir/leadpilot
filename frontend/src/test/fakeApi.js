@@ -47,7 +47,31 @@ export const FAKE_AI_RESULT = {
  *   'off'   (default) nothing happens: the follow-up stays "approved"
  *   'sends' it becomes "sent" (SIMULATED) at the next GET, like WF2 running in the background
  */
-export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'disabled' ? 'disabled' : 'writes', n8n = 'off' } = {}) {
+/** A plausible operational report (Stage 8). Tests change fields as needed. */
+export const FAKE_REPORT = {
+  generatedAt: '2026-11-11T20:00:00.000Z',
+  period: { days: 7, since: '2026-11-04T20:00:00.000Z' },
+  leads: {
+    total: 19, lastPeriod: 6, simulated: 10, needsReview: 2, blocked: 3, medianMinutesToQualify: 0.2, hotShare: 0.625,
+    byClass: { Hot: 10, Warm: 4, Cold: 2, Unclassified: 3 },
+    perDay: [
+      { date: '2026-11-05', count: 0 }, { date: '2026-11-06', count: 1 }, { date: '2026-11-07', count: 2 }, { date: '2026-11-08', count: 0 },
+      { date: '2026-11-09', count: 1 }, { date: '2026-11-10', count: 0 }, { date: '2026-11-11', count: 2 },
+    ],
+  },
+  ai: { qualificationRuns: 8, qualificationSuccessRate: 0.75, runs: 11, failed: 2, avgSeconds: 2.8, failureKinds: { timeout: 1, model_not_found: 1 }, requestsToday: 5, dailyLimit: 20, quotaResetsAt: '2026-11-12T08:00:00.000Z' },
+  followUps: { waitingForApproval: 1, inProgress: 0, sent: 3, rejected: 0 },
+  automation: { runs: 9, success: 7, failed: 1, escalated: 1 },
+  selfHealing: { retrying: 0, needsPerson: 1, recovered: 2 },
+}
+
+/** The password the fake server accepts (Stage 8). */
+export const FAKE_STAFF_PASSWORD = 'correct horse battery staple'
+
+/**
+ * options.session (Stage 8): { loggedIn = true, configured = true }. Tests are logged in by default.
+ */
+export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'disabled' ? 'disabled' : 'writes', n8n = 'off', session = {} } = {}) {
   const db = {
     leads: structuredClone(sampleLeads),
     activity: structuredClone(sampleActivity),
@@ -58,7 +82,9 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
     pendingDrafts: new Set(), // lead IDs whose AI follow-up draft appears at the next GET
     idempotencyKeys: [], // the Idempotency-Key of every POST /api/leads (Stage 7)
     recoveries: [], // Stage 7 self-healing records
+    report: structuredClone(FAKE_REPORT), // Stage 8 operational report
     loseNextAnswer: false, // true: the next lead is saved, but its answer is lost
+    session: { loggedIn: true, configured: true, ...session }, // Stage 8 staff login
   }
 
   // Simulates the server's background AI job finishing.
@@ -77,6 +103,25 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
     const method = options.method ?? 'GET'
     const path = String(url)
 
+    // ---- Stage 8: staff login, like the real server
+    if (path === '/api/auth/session') {
+      return jsonResponse({ data: { configured: db.session.configured, loggedIn: db.session.configured && db.session.loggedIn, expiresAt: null } })
+    }
+    if (path === '/api/auth/login' && method === 'POST') {
+      if (!db.session.configured) return jsonResponse({ error: { code: 'AUTH_NOT_CONFIGURED', message: 'Staff login is not set up on this server.' } }, 503)
+      if (JSON.parse(options.body).password !== FAKE_STAFF_PASSWORD) return jsonResponse({ error: { code: 'INVALID_PASSWORD', message: 'Wrong password.' } }, 401)
+      db.session.loggedIn = true
+      return jsonResponse({ data: { loggedIn: true } })
+    }
+    if (path === '/api/auth/logout' && method === 'POST') {
+      db.session.loggedIn = false
+      return jsonResponse({ data: { loggedIn: false } })
+    }
+    const isPublic = method === 'POST' && path === '/api/leads' // the customer form
+    if (!isPublic && !(db.session.configured && db.session.loggedIn)) {
+      return jsonResponse({ error: { code: 'NOT_LOGGED_IN', message: 'Please log in.' } }, 401)
+    }
+
     if (method === 'GET' && path === '/api/leads') {
       finishAiJobs()
       const data = [...db.leads].sort(newestFirst('createdAt'))
@@ -84,6 +129,9 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
     }
     if (method === 'GET' && path === '/api/activity') {
       return jsonResponse({ data: [...db.activity].sort(newestFirst('timestamp')) })
+    }
+    if (method === 'GET' && path === '/api/reports/overview') {
+      return jsonResponse({ data: db.report })
     }
     if (method === 'GET' && path === '/api/recoveries') {
       return jsonResponse({ data: [...db.recoveries].sort(newestFirst('updatedAt')), count: db.recoveries.length })
@@ -137,7 +185,9 @@ export function installFakeApi({ failWith, ai = 'disabled', drafts = ai === 'dis
       db.idempotencyKeys.push(key ?? null)
       const earlier = key && db.leads.find((l) => l.submissionKey === key)
       if (earlier) return jsonResponse({ data: earlier }, 201) // a retry: the same lead again
-      const result = validateLead(JSON.parse(options.body))
+      const sent = JSON.parse(options.body)
+      if (sent.website) return jsonResponse({ error: { code: 'SUBMISSION_REJECTED', message: 'This submission was rejected. If you are a person, please try again or call us.' } }, 400)
+      const result = validateLead(sent)
       if (!result.success) {
         return jsonResponse({ error: { code: 'VALIDATION_ERROR', message: 'Invalid', details: result.errors } }, 400)
       }

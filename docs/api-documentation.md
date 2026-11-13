@@ -45,6 +45,25 @@ Every response has an `X-Request-Id` header. You can send your own, e.g. an n8n 
 
 ---
 
+## Access (Stage 8)
+Only these are **public**: `POST /api/leads` (the lead form), `GET /api/health`, `GET /api/health/ready` and
+`/api/auth/*`. Everything else needs a **staff login** (cookie `lp_session` from `POST /api/auth/login`),
+except `/api/automation/*` (n8n, its own key). Without a login: `401 NOT_LOGGED_IN`. Every response carries
+security headers (`docs/security.md`). Rate limits: the lead form 10/min/IP, login 5 tries/15 min/IP → `429 RATE_LIMITED` + `Retry-After`.
+
+### `POST /api/auth/login`
+Body `{ "password": "..." }`. `200 { "data": { "loggedIn": true, "expiresAt": "..." } }` + `Set-Cookie: lp_session=…; HttpOnly; SameSite=Strict; Path=/api; Max-Age=28800` (`Secure` in production).
+Errors: `401 INVALID_PASSWORD`, `429 RATE_LIMITED`, `503 AUTH_NOT_CONFIGURED`.
+
+### `POST /api/auth/logout`
+Deletes the cookie (`Max-Age=0`). `200 { "data": { "loggedIn": false } }`.
+
+### `GET /api/auth/session`
+`200 { "data": { "configured": true, "loggedIn": false, "expiresAt": null } }`. Public: the dashboard uses it to choose between the login page and the app.
+
+### `GET /api/reports/overview` (staff)
+The operational report: `leads` (`total`, `lastPeriod`, `perDay[7]`, `byClass`, `hotShare`, `simulated`, `needsReview`, `blocked`, `medianMinutesToQualify`), `ai` (`qualificationRuns`, `qualificationSuccessRate`, `runs`, `failed`, `avgSeconds`, `failureKinds`, `requestsToday` (estimate), `dailyLimit`, `quotaResetsAt`), `followUps`, `automation` (real runs only), `selfHealing`. Counts only, no personal data.
+
 ## Endpoints
 
 ### `GET /api/health`
@@ -56,6 +75,8 @@ Every response has an `X-Request-Id` header. You can send your own, e.g. an n8n 
 `ai` is the **configured** model, or `"disabled"` when there is no `GEMINI_API_KEY`. It does not test the AI (that would cost quota): use `npm run ai:check` for that. AI is optional, so a broken AI never makes `/health` or `/ready` fail.
 
 ### `GET /api/health/ready`
+Stage 8: one real check is reused for 30 s (`checkedAt` says when it ran); each real check costs 7 Google Sheets reads.
+
 **Readiness:** "the server can do its job right now". Checks that storage is reachable and every tab has the right header row. It reads only the header rows and is never cached.
 ```json
 200 { "status": "ready", "store": "sheets", "timestamp": "2026-11-05T06:39:42.330Z" }
@@ -314,6 +335,11 @@ A sweep with nothing to do is not written to AgentRuns.
 | `FOLLOWUP_NOT_APPROVED` | 409 | Yes | Claim of a follow-up that is not approved (draft/rejected) |
 | `FOLLOWUP_NOT_CLAIMED` | 409 | Yes | mark-sent before the follow-up was claimed ("sending") |
 | `IDEMPOTENCY_KEY_REUSED` | 409 | Yes | The `Idempotency-Key` was already used for a different lead |
+| `NOT_LOGGED_IN` | 401 | Yes (log in first) | Staff-only route without a valid session |
+| `INVALID_PASSWORD` | 401 | Yes | Wrong staff password |
+| `AUTH_NOT_CONFIGURED` | 503 | Yes (until set up) | No `STAFF_PASSWORD_HASH`/`SESSION_SECRET` on the server: staff routes stay closed |
+| `RATE_LIMITED` | 429 | No (wait `Retry-After` seconds) | Too many requests from this IP |
+| `SUBMISSION_REJECTED` | 400 | Yes | The hidden honeypot field was filled in (a bot) |
 | `AUTOMATION_UNAUTHORIZED` | 401 | Yes | Missing or wrong `x-automation-key` |
 | `AUTOMATION_NOT_CONFIGURED` | 503 | Yes (until configured) | No `AUTOMATION_SECRET` on the server |
 | `DUPLICATE_LEAD` | 409 | Yes | Lead already exists |
@@ -324,7 +350,8 @@ A sweep with nothing to do is not written to AgentRuns.
 
 "Permanent" means sending the same request again will fail the same way. Only non-permanent errors should ever be retried.
 
-## Known limitations (Stage 7)
+## Known limitations (Stage 8)
+- One shared staff password, no user accounts; stateless sessions (logout = delete the cookie). Rate limits and sessions are per server process. Details: [`security.md`](security.md).
 - Sending follow-ups is **SIMULATED** (n8n writes a note on the dashboard; no real email). Alerts appear only on the dashboard (no Slack/email/phone notification), so someone has to look. Decisions are not tied to a user (no login until Stage 8).
 - Lost events are re-sent by the Recovery Agent, which needs n8n WF5 to run. Re-qualifying a lead as Hot sends the alert again.
 - A follow-up stuck in `sending` (n8n stopped between claim and mark-sent) is escalated, never re-sent: it may have been delivered.

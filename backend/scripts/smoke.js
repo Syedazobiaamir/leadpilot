@@ -6,7 +6,12 @@
 //
 // ⚠ It CREATES one test lead per run. Only run it against local or demo data,
 //   never against a deployment holding real customer data.
+// Stage 8: staff checks need a login. The password comes from the STAFF_PASSWORD environment
+// variable, or (in your own terminal) a hidden prompt. It is never printed.
+import { askHidden } from './envFile.js'
+
 const BASE = (process.argv[2] ?? 'http://localhost:5173').replace(/\/$/, '')
+let sessionCookie = '' // set after logging in; sent with every request
 const viaFrontend = !BASE.endsWith(':3001')
 let failures = 0
 
@@ -15,10 +20,10 @@ function check(name, condition, info = '') {
   if (!condition) failures++
 }
 
-async function call(path, { method = 'GET', body, raw, headers = {} } = {}) {
+async function call(path, { method = 'GET', body, raw, headers = {}, visitor = false } = {}) {
   const res = await fetch(BASE + path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', ...(sessionCookie && !visitor ? { Cookie: sessionCookie } : {}), ...headers },
     body: raw ?? (body !== undefined ? JSON.stringify(body) : undefined),
   })
   let json = null
@@ -55,6 +60,24 @@ async function main() {
   // --- Read endpoints
   const health = await call('/api/health')
   check('Health check ok', health.status === 200 && health.json?.status === 'ok')
+
+  // --- Stage 8: the lock, then log in
+  const locked = await call('/api/leads', { visitor: true })
+  check('Without login: staff data is locked (401 NOT_LOGGED_IN)', locked.status === 401 && locked.json?.error?.code === 'NOT_LOGGED_IN', `status=${locked.status}`)
+  check('Security headers present (nosniff, DENY, no-store, CSP)',
+    health.headers.get('x-content-type-options') === 'nosniff' && health.headers.get('x-frame-options') === 'DENY' &&
+      health.headers.get('cache-control') === 'no-store' && (health.headers.get('content-security-policy') ?? '').includes("frame-ancestors 'none'"))
+  const password = process.env.STAFF_PASSWORD || (process.stdin.isTTY ? await askHidden('Staff password (for the staff checks): ') : '')
+  if (!password) {
+    throw new Error('STAFF_PASSWORD is not set, and this is not an interactive terminal: staff checks need a login.')
+  }
+  const login = await call('/api/auth/login', { method: 'POST', body: { password }, visitor: true })
+  sessionCookie = (login.headers.get('set-cookie') ?? '').split(';')[0]
+  check('Staff login → 200 with an HttpOnly session cookie', login.status === 200 && (login.headers.get('set-cookie') ?? '').includes('HttpOnly'), `status=${login.status}`)
+  if (login.status !== 200) {
+    throw new Error('Login failed (wrong password, or too many tries: wait 15 minutes). Stopping.')
+  }
+  check('GET /api/reports/overview works (Stage 8)', typeof (await call('/api/reports/overview')).json?.data?.leads?.total === 'number')
 
   const before = await call('/api/leads')
   const startCount = before.json?.count
@@ -112,6 +135,10 @@ async function main() {
   check('X-Powered-By header hidden', traced.headers.get('x-powered-by') === null)
   check('Error responses include requestId', typeof invalid.json?.error?.requestId === 'string')
 
+  // --- Stage 8: log out again
+  const out = await call('/api/auth/logout', { method: 'POST' })
+  check('Logout deletes the session cookie', (out.headers.get('set-cookie') ?? '').includes('Max-Age=0'))
+
   console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
   // Set the exit code instead of calling process.exit(). Node then finishes on its own
   // once open network connections close. Calling process.exit() while fetch connections
@@ -122,6 +149,6 @@ async function main() {
 main().catch((err) => {
   // Usually means a server isn't running. Say so clearly instead of showing a long stack trace.
   console.error(`\nSMOKE TEST COULD NOT RUN: ${err.cause?.code ?? err.message}`)
-  console.error(`Is the app running at ${BASE}? Start the backend (and the frontend for port 5173) first.`)
+  if (err.cause?.code) console.error(`Is the app running at ${BASE}? Start the backend (and the frontend for port 5173) first.`)
   process.exitCode = 1
 })

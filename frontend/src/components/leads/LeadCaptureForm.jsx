@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { SERVICE_TYPES, TIMELINES, validateLead } from '../../validation/leadSchema.js'
 
-const EMPTY_FORM = { name: '', phone: '', email: '', zip: '', serviceType: '', timeline: '', message: '' }
+const EMPTY_FORM = { name: '', phone: '', email: '', zip: '', serviceType: '', timeline: '', message: '', website: '' }
 
 // The error message under one field. Its id links it to the input, so screen readers read it aloud.
 function FieldError({ name, errors }) {
@@ -50,7 +50,9 @@ export default function LeadCaptureForm({ onSubmit }) {
     setSubmitting(true)
     try {
       submissionKey.current ??= crypto.randomUUID()
-      const result = await onSubmit(check.data, { idempotencyKey: submissionKey.current })
+      // Stage 8 honeypot: only sent when something filled in the hidden field (a bot). The server rejects it.
+      const data = values.website ? { ...check.data, website: values.website } : check.data
+      const result = await onSubmit(data, { idempotencyKey: submissionKey.current })
       if (result.success) {
         submissionKey.current = null
         setSavedLead(result.lead)
@@ -138,6 +140,13 @@ export default function LeadCaptureForm({ onSubmit }) {
           <textarea {...fieldProps('message')} rows={4} placeholder="Describe the project, urgency and budget…" />
           <FieldError name="message" errors={errors} />
         </div>
+      </div>
+
+      {/* HONEYPOT (Stage 8): hidden from people (off-screen, skipped by keyboard and screen readers),
+          but spam bots fill in every field they find. If it's filled in, the server rejects the lead. */}
+      <div className="honeypot" aria-hidden="true">
+        <label htmlFor="website">Leave this field empty</label>
+        <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" value={values.website} onChange={handleChange} />
       </div>
 
       <button type="submit" className="button-primary" disabled={submitting}>

@@ -15,7 +15,10 @@
     "sheets:setup": "node --env-file-if-exists=.env scripts/sheets.js setup",
     "ai:check": "node --env-file-if-exists=.env scripts/ai.js check",
     "ai:eval": "node --env-file-if-exists=.env scripts/ai.js eval",
-    "ai:eval-followup": "node --env-file-if-exists=.env scripts/ai.js eval-followup"
+    "ai:eval-followup": "node --env-file-if-exists=.env scripts/ai.js eval-followup",
+    "auth:set-password": "node scripts/auth.js set-password",
+    "keys:import-google": "node scripts/keys.js import-google",
+    "keys:set-gemini": "node scripts/keys.js set-gemini"
   },
   "engines": {
     "node": ">=22"

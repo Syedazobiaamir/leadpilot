@@ -12,6 +12,9 @@ import AutomationStatus from './components/monitoring/AutomationStatus.jsx'
 import ActivityLog from './components/monitoring/ActivityLog.jsx'
 import AgentRuns from './components/monitoring/AgentRuns.jsx'
 import RecoveryList from './components/monitoring/RecoveryList.jsx'
+import ReportView from './components/report/ReportView.jsx'
+import LoginPage from './components/auth/LoginPage.jsx'
+import { useAuth } from './hooks/useAuth.js'
 import { useLeads } from './hooks/useLeads.js'
 import { useMonitoring } from './hooks/useMonitoring.js'
 import { filterLeads } from './utils/leadStats.js'
@@ -21,11 +24,44 @@ const PAGES = [
   { id: 'leads', label: 'Leads', title: 'Leads', subtitle: 'Search, filter and review customer inquiries' },
   { id: 'new-lead', label: 'New Lead', title: 'Capture a new lead', subtitle: 'Enter a customer inquiry. It is validated before it is saved.' },
   { id: 'monitoring', label: 'Automation', title: 'Automation monitoring', subtitle: 'AI agent runs, n8n workflow runs and the audit log' },
+  { id: 'report', label: 'Report', title: 'Operational report', subtitle: 'How the business and the system are doing' },
 ]
 
 const DEFAULT_FILTERS = { classification: 'All', status: 'All', search: '' }
 
+// Stage 8: the LOGIN GATE. Only staff who logged in see the app (customer data). The app's data
+// hooks live in StaffApp, so nothing is even requested before the login.
 export default function App() {
+  const auth = useAuth()
+
+  if (auth.status === 'checking') {
+    return (
+      <main className="login-shell">
+        <p className="muted" role="status">
+          Loading…
+        </p>
+      </main>
+    )
+  }
+  if (auth.status === 'error') {
+    return (
+      <main className="login-shell">
+        <div className="card error-state" role="alert">
+          <p>Something went wrong: {auth.message}</p>
+          <button type="button" className="button-primary" onClick={auth.retry}>
+            Try again
+          </button>
+        </div>
+      </main>
+    )
+  }
+  if (auth.status !== 'loggedIn') {
+    return <LoginPage onLogin={auth.login} message={auth.message} notConfigured={auth.status === 'notConfigured'} />
+  }
+  return <StaffApp onLogout={auth.logout} />
+}
+
+function StaffApp({ onLogout }) {
   const [currentPage, setCurrentPage] = useState('dashboard')
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [selectedLeadId, setSelectedLeadId] = useState(null)
@@ -99,6 +135,8 @@ export default function App() {
           </>
         )
       }
+      case 'report':
+        return <ReportView />
       case 'new-lead':
         return <LeadCaptureForm onSubmit={handleCreateLead} />
       case 'monitoring':
@@ -175,7 +213,7 @@ export default function App() {
       <Sidebar pages={PAGES} currentPage={currentPage} onNavigate={setCurrentPage} />
       <main className="main">
         <SimulatedBanner />
-        <Header title={page.title} subtitle={page.subtitle} />
+        <Header title={page.title} subtitle={page.subtitle} onLogout={onLogout} />
         {renderPage()}
       </main>
     </div>

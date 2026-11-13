@@ -116,6 +116,15 @@ describe('App', () => {
     expect(a).not.toBe(b)
   })
 
+  it('Stage 8: the honeypot field is invisible to people (not in the tab order or the accessibility tree) and normally empty', async () => {
+    const user = await renderApp()
+    await goTo(user, 'New Lead')
+    const trap = document.getElementById('website')
+    expect(trap).toHaveAttribute('tabindex', '-1')
+    expect(trap.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Leave this field empty' })).not.toBeInTheDocument() // hidden from screen readers
+  })
+
   it('shows the duplicate error from the server under the form', async () => {
     const user = await renderApp()
     await goTo(user, 'New Lead')

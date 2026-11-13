@@ -107,6 +107,13 @@ export async function createLead(input, { idempotencyKey } = {}) {
     throw new AppError(400, 'VALIDATION_ERROR', 'Request body must be a JSON object with lead fields')
   }
 
+  // Stage 8 HONEYPOT: the form has a hidden "website" field that people never see or fill in,
+  // but spam bots fill in every field they find. Filled in → a bot. Rejected, and logged.
+  if (typeof input.website === 'string' && input.website.trim() !== '') {
+    logger.warn('honeypot field filled in: submission rejected as spam')
+    throw new AppError(400, 'SUBMISSION_REJECTED', 'This submission was rejected. If you are a person, please try again or call us.')
+  }
+
   // Zod checks every field. Fields it doesn't know (e.g. "classification": "Hot",
   // "status": "Won") are DROPPED, so a client can't set values only the system should set.
   const result = validateLead(input)

@@ -121,6 +121,40 @@ export function readAutomationConfig(source = process.env) {
   return { secret, webhookBaseUrl: webhookBaseUrl || null }
 }
 
+/**
+ * Staff login settings (Stage 8). Both are written by `npm run auth:set-password`.
+ *   STAFF_PASSWORD_HASH  the scrypt hash of the staff password (never the password itself)
+ *   SESSION_SECRET       signs the login cookies (at least 32 characters, random)
+ * Neither → null: login is NOT set up, and every staff-only route answers 503 (closed, never open).
+ * Only one of them → an error (half a setup is a mistake). Values are never put in a message.
+ */
+export function readAuthConfig(source = process.env) {
+  const passwordHash = (source.STAFF_PASSWORD_HASH ?? '').trim().replace(/^["']|["']$/g, '')
+  const sessionSecret = (source.SESSION_SECRET ?? '').trim().replace(/^["']|["']$/g, '')
+  if (!passwordHash && !sessionSecret) return null
+  const problems = []
+  if (!/^scrypt\$\d+\$\d+\$\d+\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/.test(passwordHash)) {
+    problems.push('STAFF_PASSWORD_HASH is missing or not a scrypt hash (run "npm run auth:set-password")')
+  }
+  if (sessionSecret.length < 32 || /\s/.test(sessionSecret)) {
+    problems.push('SESSION_SECRET is missing or shorter than 32 characters (run "npm run auth:set-password")')
+  }
+  if (problems.length > 0) throw new Error(`Staff login is not configured correctly:\n  - ${problems.join('\n  - ')}`)
+  return { passwordHash, sessionSecret }
+}
+
+/**
+ * TRUST_PROXY (Stage 8): how many proxies sit in front of this server. Empty = none (local).
+ * On Vercel/behind one load balancer use 1, so req.ip is the VISITOR's IP (rate limits need it).
+ * Never trust more proxies than really exist: visitors could then fake their IP.
+ */
+export function readTrustProxy(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return false
+  if (!/^[0-9]$/.test(text)) throw new Error(`Invalid TRUST_PROXY "${value}". Use a number of proxies (e.g. 1), or leave it empty.`)
+  return Number(text)
+}
+
 // Fast, low-cost model. Checked against the models your key can use with "npm run ai:check".
 export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'
 
@@ -155,4 +189,16 @@ export const config = {
   automation: env === 'test' ? null : readAutomationConfig(),
   // Give up on sending an event to n8n after this long (ms). Events are sent in the background.
   automationTimeoutMs: 5_000,
+  // Stage 8 security ---------------------------------------------------------
+  trustProxy: readTrustProxy(process.env.TRUST_PROXY),
+  // Staff login, or null when not set up. SAFETY: tests inject their own (useAuthForTests).
+  auth: env === 'test' ? null : readAuthConfig(),
+  // Requests per IP. Tests get very high limits (a test that checks a limit lowers it on purpose).
+  rateLimits: {
+    leadCreatePerMinute: env === 'test' ? 10_000 : 10, // the public lead form
+    loginPer15Minutes: env === 'test' ? 10_000 : 5, // password guesses
+  },
+  // GET /api/health/ready is reused for this long: each real check costs 7 Google Sheets reads
+  // (one per tab), and Google allows ~60 reads/minute. 0 in tests.
+  readyCacheMs: env === 'test' ? 0 : 30_000,
 }

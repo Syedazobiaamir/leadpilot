@@ -624,3 +624,43 @@ button:focus-visible {
 .activity-needs-person .activity-message { font-weight: 600; }
 .activity-hot { border-left: 4px solid var(--hot); padding-left: 8px; }
 .badge-followup-sending { background: var(--warm-bg); color: var(--warm); }
+
+/* Stage 8: honeypot field. Off-screen rather than display:none, because some bots skip hidden inputs. */
+.honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---- Stage 8: login ------------------------------------------------------------------ */
+.login-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--bg); }
+.login-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
+.login-card h1 { margin: 0; }
+.login-card form { display: flex; flex-direction: column; gap: 12px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.logout-button { flex-shrink: 0; }
+
+/* ---- Stage 8: operational report ------------------------------------------------------- */
+.report-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.three-col { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+@media (max-width: 900px) { .three-col { grid-template-columns: 1fr; } }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.count-list { margin: 0; display: grid; gap: 6px; }
+.count-list > div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 4px 0; }
+.count-list dt { color: var(--muted); }
+.count-list dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.count-danger dd { color: var(--danger); }
+
+/* Leads per day: one series, one hue; thin bars with 4px rounded tops on the baseline, 2px gaps. */
+.day-chart { margin: 0; }
+.day-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.day-column { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.day-plot { height: 140px; width: 100%; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--border); }
+.day-bar { position: relative; width: min(28px, 70%); min-height: 2px; background: var(--primary); border-radius: 4px 4px 0 0; outline-offset: 2px; }
+.day-tip { position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); font-size: 0.8rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; opacity: 0; pointer-events: none; }
+.day-bar:hover .day-tip, .day-bar:focus .day-tip { opacity: 1; }
+.day-name { font-size: 0.75rem; color: var(--muted); }
+
+/* AI quota meter: the track is a lighter step of the same hue; the fill warns as the quota runs out. */
+.quota { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.quota-head { display: flex; justify-content: space-between; }
+.meter { height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--primary) 18%, var(--surface)); overflow: hidden; }
+.meter-fill { height: 100%; background: var(--primary); border-radius: 5px; }
+.meter-warning .meter-fill { background: var(--warm); }
+.meter-danger .meter-fill { background: var(--danger); }

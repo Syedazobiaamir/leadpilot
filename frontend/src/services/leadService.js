@@ -19,6 +19,10 @@ export class ApiError extends Error {
   }
 }
 
+// Stage 8: fired when the server says "you are not logged in" (session expired, password changed,
+// or never logged in). The login gate (hooks/useAuth.js) listens and shows the login page.
+export const SESSION_ENDED_EVENT = 'leadpilot:session-ended'
+
 /**
  * Sends a request and returns the parsed JSON body.
  * Every kind of failure becomes an ApiError with a clear message:
@@ -63,6 +67,7 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
         code: 'BAD_GATEWAY',
       })
     }
+    if (res.status === 401 && apiError.code === 'NOT_LOGGED_IN') window.dispatchEvent(new Event(SESSION_ENDED_EVENT))
     throw new ApiError(apiError.message, {
       status: res.status,
       code: apiError.code,
@@ -179,4 +184,33 @@ export async function createLead(input, { idempotencyKey } = {}) {
     const reference = err.status >= 500 && err.requestId ? ` (reference: ${err.requestId.slice(0, 8)})` : ''
     return { success: false, errors: { form: err.message + reference } }
   }
+}
+
+// ---- Staff login (Stage 8) ---------------------------------------------------------------
+// The session lives in an HttpOnly cookie: the browser stores it and sends it with every /api
+// request by itself. This code never sees or touches the token.
+
+/** { configured, loggedIn, expiresAt }. Throws ApiError if the server can't be reached. */
+export async function getSession() {
+  return (await request('/auth/session')).data
+}
+
+/** Returns { success: true } or { success: false, code, error } (wrong password, too many tries...). */
+export async function loginStaff(password) {
+  try {
+    await request('/auth/login', { method: 'POST', body: { password } })
+    return { success: true }
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err
+    return { success: false, code: err.code, error: err.message }
+  }
+}
+
+export async function logoutStaff() {
+  await request('/auth/logout', { method: 'POST' })
+}
+
+/** Stage 8: the operational report (counts only, staff only). */
+export async function getReport() {
+  return (await request('/reports/overview')).data
 }
