@@ -34,3 +34,6 @@ STAFF-PASSWORD.txt
 
 # Stage 9: local backups of the Google Sheet (contain customer data). NEVER commit.
 backups/
+
+.vercel
+.env*.local

@@ -72,3 +72,10 @@ The backend sends events to n8n when `backend/.env` has `N8N_WEBHOOK_BASE_URL=ht
 the same credential); anything else gets `403`. Import order: WF4 first (the others point to it as their error workflow).
 
 Details per workflow: [`workflows.md`](workflows.md).
+
+## Stage 9: connecting n8n to the live site
+The live site (Vercel) reaches this n8n through a free Cloudflare tunnel, and the workflows call the live site
+instead of `localhost:3001` (imported copies made by `automation/scripts/point-workflows.mjs`). The tunnel
+address changes on every start, so Vercel's `N8N_WEBHOOK_BASE_URL` must be updated each time.
+Step by step: [`docs/deployment.md`](../../docs/deployment.md#starting-n8n-for-the-live-site).
+To go back to local development, import the original files from `automation/workflows/` again.

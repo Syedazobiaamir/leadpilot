@@ -122,12 +122,12 @@ It checks 23 behaviours (24 through the proxy, including the app page) and exits
 ## Known limitations
 - **AI:** the Gemini free tier allows **20 requests/day** (gemini-2.5-flash). After that, AI runs fail with `quota_exhausted`. Automatic AI retries (Stage 7) are capped at 3 per sweep and 5 per day. See `docs/ai-qualification.md` and `docs/self-healing.md`.
 - **Partial writes:** Sheets has no transactions. A lead saved without its activity row still returns `201` (the gap is logged). A lead write that timed out may have been saved: the form's retry with the same `Idempotency-Key` returns it instead of a duplicate.
-- **Duplicate protection is in-process:** creates run one at a time inside ONE server process. Several instances (serverless) would need a database-level lock (Stage 9).
+- **Duplicate protection is in-process:** creates run one at a time inside ONE server process. Several instances (serverless, i.e. the live Vercel site) would need a database-level lock.
 - **Scale:** each uncached read loads a whole tab. That is fine for hundreds of leads, slow for many thousands.
 - A temporary Google error still returns `503` to the caller right away; the self-healing (Stage 7) retries background work (AI, n8n hand-offs), not the caller's request. `/api/health/ready` reads 7 tabs per call: don't poll it fast (60 reads/minute limit).
 - Storage error log lines don't include the `requestId`. Match them by time with the `request failed` line (to improve in Stage 8).
 - No authentication, rate limiting or security headers yet (Stage 8).
-- No CORS setup: in development the Vite proxy makes it unnecessary. Deployment is decided in Stage 9.
+- No CORS setup: in development the Vite proxy makes it unnecessary; on Vercel the page and the API share one domain (`docs/deployment.md`).
 - Workflow runs are simulated sample data (Stage 6: n8n).
 
 ## Stage 8 scripts
@@ -137,3 +137,9 @@ It checks 23 behaviours (24 through the proxy, including the app page) and exits
 | `npm run keys:import-google -- "<key.json>"` | Writes a NEW Google service-account key into `.env` (refuses the old exposed key) |
 | `npm run keys:set-gemini` | Asks for a NEW Gemini key (hidden) and writes it into `.env` |
 | `npm run smoke` | Now logs in: set `STAFF_PASSWORD` (or type it when asked). Sends ~9 form POSTs: wait a minute between runs (rate limit) |
+
+## Stage 9: on Vercel
+The same app runs as one Vercel function (`../api/index.js`). Background work (AI, follow-ups, n8n events) goes
+through `utils/background.js` → `keepAlive()` (Vercel's `waitUntil`; does nothing locally). Settings, deploying and
+the n8n tunnel: [`docs/deployment.md`](../docs/deployment.md). Local development uses `DATA_STORE=memory`: the
+Google Sheet is now the LIVE database, so never run the smoke test against it.

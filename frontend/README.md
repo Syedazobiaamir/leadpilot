@@ -28,7 +28,7 @@ npm run dev      # http://localhost:5173  ← open this one
 
 In development, Vite **proxies** every `/api/...` request to `http://localhost:3001` (see `vite.config.js`).
 The browser only talks to port 5173, so no CORS setup is needed.
-`VITE_API_URL` can override the API address, e.g. for deployment in Stage 9.
+`VITE_API_URL` can override the API address. On Vercel (Stage 9) it isn't needed: the page and the API share one domain.
 
 | Command | What it does |
 |---|---|
@@ -59,6 +59,7 @@ The browser only talks to port 5173, so no CORS setup is needed.
 | Staff login (Stage 8) | Login page before anything else; **Log out** top right; an expired session (8 h) returns to the login page with the reason. The lead form has a hidden honeypot field for bots |
 | Report (Stage 8) | Key numbers, new leads per day (bars + a screen-reader table), AI quota meter (today, Pacific time; an estimate), follow-ups, n8n runs, self-healing. Counts only |
 | Activity & audit log | Sample events, plus real events for leads you create |
+| Public customer form (Stage 9) | `/request`: no login, no data shown; the same tested form with customer-friendly wording and errors (`components/public/RequestPage.jsx`, chosen in `main.jsx` by the address) |
 
 ## Folder structure
 

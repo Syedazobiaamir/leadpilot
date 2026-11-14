@@ -360,7 +360,7 @@ A sweep with nothing to do is not written to AgentRuns.
 - Automatic AI retries are limited to 3 per sweep and 5 per day (free tier = 20/day); the rest waits.
 - No authentication or rate limiting yet (Stage 8). Polling `/api/health/ready` fast exhausts Google's 60 reads/minute (each check reads 7 tabs).
 - **Partial writes (Google Sheets):** Sheets has no transactions. If a lead is saved but its activity event fails, the request still succeeds (`201`) and the gap is only logged. A lead write that timed out may have been saved: the form's retry with the same `Idempotency-Key` returns it.
-- **Duplicate protection is in-process:** creates run one at a time inside ONE server. Several server instances (e.g. serverless) would need a database-level lock (Stage 9).
+- **Duplicate protection is in-process:** creates run one at a time inside ONE server. Several server instances (e.g. serverless) would need a database-level lock. Stage 9: the live site runs on Vercel, so this limit applies there (see `deployment.md`).
 - **Cache:** reads are cached for 10 s, so hand edits in the sheet appear in the API within ~10 s.
 - **Rows broken by hand** (e.g. text in `score`) are skipped and logged as warnings, not returned.
 - **Scale:** every uncached read loads a whole tab. That is fine for hundreds of leads, not for many thousands.

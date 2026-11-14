@@ -90,7 +90,7 @@ WF4 → "NEEDS A PERSON" on the dashboard. Lost hand-offs are retried by the bac
 
 ## Limitations
 - The create queue works inside **one server process**. Several instances (e.g. serverless on Vercel) need a
-  lock in the database itself (Stage 9).
+  lock in the database itself. On Vercel (Stage 9) this limit is real: see `deployment.md`.
 - The Recovery Agent depends on n8n WF5. If n8n is down, nothing sweeps (records wait, nothing is lost).
 - A temporary AI failure was not reproduced live (only in tests); permanent AI, n8n outage and storage outage were.
 - A follow-up stuck in "sending" always needs a person: the system can't know whether it was delivered.

@@ -42,7 +42,9 @@ be strict; secrets never leak; every problem can be traced. Plus an operational 
 `X-Content-Type-Options: nosniff` · `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` ·
 `X-Frame-Options: DENY` · `Referrer-Policy: no-referrer` · `Cross-Origin-Resource-Policy: same-origin` ·
 `Cache-Control: no-store` (responses hold customer data) · `Strict-Transport-Security` in production.
-No `X-Powered-By`. These cover the API; the dashboard's own files get theirs from the host (Stage 9).
+No `X-Powered-By`. These cover the API. Stage 9: the dashboard page gets its own from `vercel.json`: a CSP that
+allows scripts and styles only from the site itself (no inline code), `frame-ancestors 'none'`, nosniff, DENY, HSTS,
+Permissions-Policy. `tests/deployment.test.js` checks them; verified live.
 
 ## Protecting the Google Sheets quota
 `/api/health/ready` reads 7 tabs (Google allows ~60 reads/minute). It is cached for 30 s, so calling it
@@ -55,9 +57,9 @@ fast can no longer exhaust the quota (found in a Stage 7 drill).
 - **Git history scan (2026-11-11):** all 7 commits; only placeholders and fake test keys; no `.env` or key file
   was ever committed.
 - **`npm audit` (2026-11-11):** 0 known vulnerabilities (backend 170 packages, frontend 150).
-- ⚠️ **Open:** the Google and Gemini keys were pasted into a chat on 2026-11-05. Rotation is postponed to
-  Stage 9 by the developer's decision, and must happen before deployment or real customer data.
-  Helpers: `npm run keys:import-google -- "<key.json>"`, `npm run keys:set-gemini`.
+- ⚠️ **Open risk:** the Google and Gemini keys were pasted into a chat on 2026-11-05. On 2026-11-13 the developer
+  decided to keep and deploy them (not rotated), after being told the risk. Rotate any time with
+  `npm run keys:import-google -- "<key.json>"` / `npm run keys:set-gemini`, then update Vercel's settings and redeploy.
 
 ## Monitoring
 - **requestId on every log line:** the request runs inside an `AsyncLocalStorage` context; the logger adds the
@@ -94,4 +96,4 @@ Smoke test (real system, via the Vite proxy): 35/35, including the lock, headers
   expires (8 h). Ending all sessions = change `SESSION_SECRET` or the password.
 - One shared staff password, no user accounts or roles: the audit log can't say WHICH staff member did something.
 - No CAPTCHA; the honeypot stops simple bots only.
-- The dashboard's own security headers (CSP for the HTML/JS) come in Stage 9 with the host config.
+- The public form page (`/request`, Stage 9) is open to everyone by design; it shows no data and only sends the form.

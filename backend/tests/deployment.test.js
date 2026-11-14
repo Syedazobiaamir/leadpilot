@@ -128,3 +128,34 @@ describe('deployment config files', () => {
     }
   })
 })
+
+describe('n8n workflows pointed at the live site (automation/scripts/point-workflows.mjs)', async () => {
+  const { checkBaseUrl, pointWorkflow, LOCAL_BACKEND } = await import('../../automation/scripts/point-workflows.mjs')
+  const { readdirSync } = await import('node:fs')
+  const dir = new URL('../../automation/workflows/', import.meta.url)
+
+  it('every workflow file calls the local backend (so local development works) and gets fully converted', () => {
+    const files = readdirSync(dir).filter((f) => f.endsWith('.json'))
+    expect(files).toHaveLength(5)
+    let total = 0
+    for (const file of files) {
+      const { text, count } = pointWorkflow(readFileSync(new URL(file, dir), 'utf8'), 'https://leadpilot.example.app')
+      total += count
+      expect(text).not.toContain(LOCAL_BACKEND)
+      expect(text).not.toContain('localhost:3001')
+      JSON.parse(text) // still valid JSON
+    }
+    expect(total).toBe(11)
+  })
+
+  it('accepts only a plain site address', () => {
+    expect(checkBaseUrl('https://leadpilot-lac-psi.vercel.app/')).toBe('https://leadpilot-lac-psi.vercel.app')
+    expect(() => checkBaseUrl('https://leadpilot-lac-psi.vercel.app/api')).toThrow(/without a path/)
+    expect(() => checkBaseUrl('ftp://x.example')).toThrow(/https/)
+    expect(() => checkBaseUrl('not a url')).toThrow(/full URL/)
+  })
+
+  it('refuses a copy that was already converted (nothing to replace)', () => {
+    expect(() => pointWorkflow('{"url":"https://leadpilot.example.app/api/x"}', 'https://a.example')).toThrow(/already a converted copy/)
+  })
+})
