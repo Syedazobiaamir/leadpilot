@@ -47,6 +47,7 @@ docs/         architecture, API, deployment, testing, security, AI, self-healing
 ## Documentation
 | Topic | File |
 |---|---|
+| Case study (problem, decisions, bugs found, results) | [docs/case-study.md](docs/case-study.md) |
 | Architecture and decisions | [docs/architecture.md](docs/architecture.md) |
 | API reference | [docs/api-documentation.md](docs/api-documentation.md) |
 | Deployment (Vercel, n8n tunnel) | [docs/deployment.md](docs/deployment.md) |
@@ -57,6 +58,7 @@ docs/         architecture, API, deployment, testing, security, AI, self-healing
 | Self-healing | [docs/self-healing.md](docs/self-healing.md) |
 | Google Sheets setup | [docs/google-sheets-setup.md](docs/google-sheets-setup.md) |
 | n8n setup and workflows | [automation/documentation/](automation/documentation/) |
+| Demo script (Loom) | [docs/demo-script.md](docs/demo-script.md) |
 | Backend / frontend details | [backend/README.md](backend/README.md), [frontend/README.md](frontend/README.md) |
 
 ## Status and limits
