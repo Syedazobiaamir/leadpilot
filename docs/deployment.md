@@ -69,7 +69,9 @@ n8n and the tunnel only work while the developer's computer is on and both are r
 The free tunnel gets a **new address every time it starts**, so:
 1. `n8n start` (wait until http://localhost:5678 opens)
 2. `C:\Users\GibTek\tools\cloudflared\cloudflared.exe tunnel --no-autoupdate --url http://localhost:5678`
-   → note the `https://….trycloudflare.com` address it prints
+   → wait for *"Your quick Tunnel has been created!"* and note the `https://<words>.trycloudflare.com` address
+   below it. If it says *"failed to request quick Tunnel"* (often a short DNS hiccup), just start it again: the
+   error text contains `api.trycloudflare.com`, which is NOT a tunnel address (this mistake was made once).
 3. Tell Vercel the new address, then redeploy:
    ```bash
    printf "%s" "https://<new-address>.trycloudflare.com/webhook" | vercel env add N8N_WEBHOOK_BASE_URL production --force

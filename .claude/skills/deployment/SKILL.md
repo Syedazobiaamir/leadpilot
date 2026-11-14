@@ -44,6 +44,8 @@ Full guide and verification results: `docs/deployment.md`. Live: https://leadpil
 - Repo workflows call `http://localhost:3001`. For the live site import copies made by
   `node automation/scripts/point-workflows.mjs <site> <temp dir>` (n8n stopped; only the 5 `lp…` IDs; import, then publish).
 - The quick tunnel address changes on every start → update `N8N_WEBHOOK_BASE_URL` (production) + redeploy.
+  Take the address only after "Your quick Tunnel has been created!" and test it (healthz 200, webhook without key 403)
+  BEFORE giving it to Vercel; `api.trycloudflare.com` from an error message once went live for ~1.5 min.
 - Check: health `"automation":"n8n"`, webhook without key → 403 through the tunnel, WF3/WF5 executions succeed
   (n8n's database can be read read-only; `n8n execute` can't run while n8n runs).
 

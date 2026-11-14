@@ -93,8 +93,13 @@ export function createRecoveryService({ store = leadStore, logger = defaultLogge
         const existing = await findOpen(kind, targetId)
         if (!existing) return null
         const label = RECOVERY_KINDS[kind] ?? kind
-        const record = await store.updateRecovery(existing.id, { status: 'recovered', nextRetryAt: null, updatedAt: now().toISOString() })
-        const how = existing.status === 'escalated' ? 'after a person stepped in' : `after ${existing.attempts + 1} tries`
+        // While open, `attempts` counts the FAILED tries. The try that just worked counts too, so a recovered
+        // record shows the total (e.g. 1 failed + 1 that worked = 2), the same number as the message below.
+        // An escalated record keeps its count: a person fixed it, not an automatic try.
+        const escalated = existing.status === 'escalated'
+        const attempts = escalated ? existing.attempts : existing.attempts + 1
+        const record = await store.updateRecovery(existing.id, { status: 'recovered', attempts, nextRetryAt: null, updatedAt: now().toISOString() })
+        const how = escalated ? 'after a person stepped in' : `after ${attempts} tries`
         await audit('recovery', `Recovered: ${label} of ${targetId} worked ${how}.`, targetId)
         logger.info('recovery recorded', { kind, targetId, action: 'recovered' })
         return record

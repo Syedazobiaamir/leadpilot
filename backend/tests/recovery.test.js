@@ -118,7 +118,8 @@ describe('the Recovery Agent sweep', () => {
     const result = await sweeper.sweep()
     expect(result.counts).toMatchObject({ retried: 1, recovered: 1 })
     expect(await store.findLeadById('LD-7001')).toMatchObject({ qualificationStatus: 'qualified', classification: 'Hot' })
-    expect(await recordOf('LD-7001')).toMatchObject({ status: 'recovered', nextRetryAt: null })
+    // The record and the message must tell the same story: 1 failed try + 1 successful try = 2 tries.
+    expect(await recordOf('LD-7001')).toMatchObject({ status: 'recovered', nextRetryAt: null, attempts: 2 })
     expect(await messages()).toContainEqual('Recovered: AI qualification of LD-7001 worked after 2 tries.')
     expect(await messages()).toContainEqual('Automatic retry 2: AI qualification of LD-7001')
   })

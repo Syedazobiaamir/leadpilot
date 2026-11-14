@@ -249,8 +249,9 @@ Activity and audit events, newest first. `type` is one of `lead`, `ai`, `automat
 ### `GET /api/recoveries`
 Stage 7 self-healing records, most recently changed first. One record per problem the system tried to fix by itself.
 ```json
-200 { "data": [ { "id": "RC-...", "kind": "followup_event", "targetId": "FU-...", "status": "recovered", "attempts": 1, "nextRetryAt": null, "lastErrorKind": "unreachable", "lastError": "Could not reach n8n at localhost:5678 (is n8n running?)", "createdAt": "...", "updatedAt": "..." } ], "count": 3 }
+200 { "data": [ { "id": "RC-...", "kind": "followup_event", "targetId": "FU-...", "status": "recovered", "attempts": 2, "nextRetryAt": null, "lastErrorKind": "unreachable", "lastError": "Could not reach n8n at localhost:5678 (is n8n running?)", "createdAt": "...", "updatedAt": "..." } ], "count": 3 }
 ```
+`attempts`: while open, the number of FAILED tries; once recovered automatically, all tries including the one that worked (1 failed + 1 worked = 2, as in the "Recovered … after 2 tries" message). An escalated record keeps its count.
 `kind`: `qualification` (lead), `followup_event`, `followup_delivery` (follow-up), `hot_lead_event` (lead). `status`: `pending_retry` (next try at `nextRetryAt`), `recovered`, `escalated` (a person must look). Rules and limits: [`self-healing.md`](self-healing.md).
 
 ### `GET /api/workflow-runs`
